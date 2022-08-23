@@ -509,7 +509,7 @@ function App() {
           <button onClick={handleImportData}>import</button>
           <button onClick={handleExportData}>export</button>
           <div style={{ marginLeft: 150, marginRight: 150 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
-          <button onClick={handleMostRecentHead}>Go to most recent head</button>
+          <button onClick={handleMostRecentHead}>Center on most recent head</button>
           <button style={{ marginLeft: 100 }} onClick={handlePreviousHead}>&lt;</button>
           Cycle heads
           <button onClick={handleNextHead}>&gt;</button>
@@ -580,7 +580,7 @@ function App() {
                 checked={followMostRectentHead}
                 onChange={() => setFollowMostRectentHead(!followMostRectentHead)}
               />
-              Follow most recent head
+              Always center on most recent head
             </label>
           </div>
           <div className="importantText">{protoArraySamples?.length > 0 ? protoArraySamples[0].timestamp.toLocaleString() : 'N/A'}</div>

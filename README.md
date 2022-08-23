@@ -1,6 +1,8 @@
 # ProtoArray visualization tool
 
-<img width="1820" alt="image" src="https://user-images.githubusercontent.com/15999009/186199199-c695ab84-6930-4441-88c2-6ab83529aa38.png">
+**Currently supporting TEKU data only**
+
+<img width="1819" alt="image" src="https://user-images.githubusercontent.com/15999009/186262375-f794d40b-709a-4de0-958d-643d7a1f3751.png">
 
 ## Available Scripts
 

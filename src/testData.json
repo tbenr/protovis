@@ -8,10 +8,23 @@
       "finalizedEpoch": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
       "unrealizedJustifiedCheckpoint": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
       "unrealizedFinalizedCheckpoint": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
-      "executionBlockHash": "0x5dcbb8ba8af272a027c92a5e9b196815c12e28ecf39ae8f76df8b549d6376bac",
+      "executionBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
       "validationStatus": "VALID",
       "weight": "918946000000000"
     },
+    {
+        "slot": "1123678",
+        "blockRoot": "0x741fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c29",
+        "parentRoot": "0xc51fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c29",
+        "stateRoot": "0xd0c8ce95dbd148811430a4b3b8215b4fc6abfb27c3497b0a2e4609dbe27c497e",
+        "justifiedEpoch": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
+        "finalizedEpoch": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
+        "unrealizedJustifiedCheckpoint": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
+        "unrealizedFinalizedCheckpoint": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
+        "executionBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "validationStatus": "VALID",
+        "weight": "918946000000000"
+      },
     {
       "slot": "1123686",
       "blockRoot": "0xc56fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c24",
@@ -28,26 +41,13 @@
     {
       "slot": "1123681",
       "blockRoot": "0xc53fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c2a",
-      "parentRoot": "0xd367f4ea7c219259b23df54715cd25cb9c1ea7f6cf8ff17dd6ed2a10278a2d05",
+      "parentRoot": "0x741fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c29",
       "stateRoot": "0xd0c8ce95dbd148811430a4b3b8215b4fc6abfb27c3497b0a2e4609dbe27c497e",
       "justifiedEpoch": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
       "finalizedEpoch": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
       "unrealizedJustifiedCheckpoint": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
       "unrealizedFinalizedCheckpoint": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
-      "executionBlockHash": "0x5dcbb8ba8af272a027c92a5e9b196815c12e28ecf39ae8f76df8b549d6376bac",
-      "validationStatus": "VALID",
-      "weight": "918946000000000"
-    },
-    {
-      "slot": "1123681",
-      "blockRoot": "0xc52fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c22",
-      "parentRoot": "0xd367f4ea7c219259b23df54715cd25cb9c1ea7f6cf8ff17dd6ed2a10278a2d05",
-      "stateRoot": "0xd0c8ce95dbd148811430a4b3b8215b4fc6abfb27c3497b0a2e4609dbe27c497e",
-      "justifiedEpoch": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
-      "finalizedEpoch": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
-      "unrealizedJustifiedCheckpoint": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
-      "unrealizedFinalizedCheckpoint": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
-      "executionBlockHash": "0x5dcbb8ba8af272a027c92a5e9b196815c12e28ecf39ae8f76df8b549d6376bac",
+      "executionBlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
       "validationStatus": "VALID",
       "weight": "918946000000000"
     },
@@ -80,7 +80,7 @@
     {
       "slot": "1123683",
       "blockRoot": "0x0bbefb5f07150396702589bec13c573ed535e865da1c05c39c09085495e0c1c6",
-      "parentRoot": "0xc52fe26fc0c372b6c8303d28de4543fae90502df692a82d53b90f053c5676c22",
+      "parentRoot": "0x65112bcfd6aac04a510f17cb3a5ba5b93ec566022ea5d3305e6f1c06504ef835",
       "stateRoot": "0x7a95cd69c323727f213df7f6065b42d6a8ba2fc09f060d3eea908b0d95bd8924",
       "justifiedEpoch": "Checkpoint{epoch=35114, root=0x2dda974e99a56e0cd1607ea4099a4eea8a564f8167378e02c6c386970315b3a9}",
       "finalizedEpoch": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
@@ -88,7 +88,7 @@
       "unrealizedFinalizedCheckpoint": "Checkpoint{epoch=35113, root=0x5f7105b2cad32d29dfc3f10530dbc115766bfac874a5ad69c4db39fc63696d3f}",
       "executionBlockHash": "0xf8061724e83ceb3d8d80946821ff06035f46c971ceb2e17a22c90ae43d591992",
       "validationStatus": "INVALID",
-      "weight": "734849000000000"
+      "weight": "318946000000000"
     },
     {
       "slot": "1123684",
@@ -252,7 +252,7 @@
     },
   
     {
-      "slot": "1123698",
+      "slot": "1123692",
       "blockRoot": "0x926519679924d20cb5340237b575cf8789aeff7fd0b7b2e625c6967fba8eb3a0",
       "parentRoot": "0x926519679924d20cb5340237b575cf8789aeff7fd0b7b2e625c6967fba8eb3ac",
       "stateRoot": "0xbbbd621802d3aa7d68b3cd535c5a73f4237bb92fbbc792da1ff8931def1ec13b",

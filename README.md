@@ -1,6 +1,6 @@
-# Getting Started with Create React App
+# ProtoArray visualization tool
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+<img width="1820" alt="image" src="https://user-images.githubusercontent.com/15999009/186199199-c695ab84-6930-4441-88c2-6ab83529aa38.png">
 
 ## Available Scripts
 

@@ -404,7 +404,12 @@ function App() {
         let node: any = networkNodes.get(params.nodes[0])
         if (!node) return
         let blockRoot: string = node.protoNode.blockRoot
-        navigator.clipboard.writeText(blockRoot)
+        if (navigator.clipboard === undefined) {
+          alert('clipboard not available in unsecure context')
+        } else {
+          navigator.clipboard.writeText(blockRoot)
+        }
+
         params.event = "[original event]"
       },
       doubleClick: function (params) {
@@ -412,7 +417,11 @@ function App() {
         let node: any = networkNodes.get(params.nodes[0])
         if (!node) return
         let json: string = JSON.stringify(node.protoNode, null, ' ')
-        navigator.clipboard.writeText(json)
+        if (navigator.clipboard === undefined) {
+          alert('clipboard not available in unsecure context')
+        } else {
+          navigator.clipboard.writeText(json)
+        }
         params.event = "[original event]"
       },
       showPopup: function (params) {

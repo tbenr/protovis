@@ -2,7 +2,9 @@
 
 **Currently supporting TEKU data only**
 
-<img width="1819" alt="image" src="https://user-images.githubusercontent.com/15999009/186262375-f794d40b-709a-4de0-958d-643d7a1f3751.png">
+<img width="1772" alt="image" src="https://user-images.githubusercontent.com/15999009/186434132-37985f38-1c71-4835-bae5-493a58912e42.png">
+
+https://user-images.githubusercontent.com/15999009/186433395-c1ba217b-6e3f-4936-bbed-38b1261cbfd6.mov
 
 ## Available Scripts
 

@@ -5885,10 +5885,10 @@ lodash.uniq@^4.5.0:
   resolved "https://registry.npmjs.org/lodash.uniq/-/lodash.uniq-4.5.0.tgz"
   integrity sha512-xfBaXQd9ryd9dlSDvnvI0lvxfLJlYAZzXomUYzLKtUeOQvOP5piqAWuGtrhWeqaXK9hhoM/iyJc5AV+XfsX3HQ==
 
-lodash@4.17.19:
-  version "4.17.19"
-  resolved "https://registry.npmjs.org/lodash/-/lodash-4.17.19.tgz"
-  integrity sha512-JNvd8XER9GQX0v2qJgsaN/mzFCNA5BRe/j8JN9d+tWyGLSodKQHKFicdwNYzWwI3wjRnaKPsGj1XkBjx/F96DQ==
+lodash@4.17.20:
+  version "4.17.20"
+  resolved "https://registry.npmjs.org/lodash/-/lodash-4.17.20.tgz"
+  integrity sha512-PlhdFcillOINfeV7Ni6oF1TAEayyZBoZ8bcshTHqOYJYlrqzRK5hagpagky5o4HfCzzd1TRkXPMFq6cKk9rGmA==
 
 lodash@^4.17.15, lodash@^4.17.20, lodash@^4.17.21, lodash@^4.7.0:
   version "4.17.21"
@@ -6063,11 +6063,6 @@ mkdirp@~0.5.1:
   integrity sha512-FP+p8RB8OWpF3YZBCrP5gtADmtXApB5AMLn+vdyA+PyxCjrCs00mjyUozssO33cwDeT3wNGdLxJ5M//YqtHAJw==
   dependencies:
     minimist "^1.2.6"
-
-moment@2.27.0:
-  version "2.27.0"
-  resolved "https://registry.npmjs.org/moment/-/moment-2.27.0.tgz"
-  integrity sha512-al0MUK7cpIcglMv3YF13qSgdAIqxHTO7brRtaz3DlSULbqfazqkc5kEjNrLDOM7fsjshoFIihnU8snrP7zUvhQ==
 
 moment@^2.29.4:
   version "2.29.4"
@@ -8497,12 +8492,7 @@ utils-merge@1.0.1:
   resolved "https://registry.npmjs.org/utils-merge/-/utils-merge-1.0.1.tgz"
   integrity sha512-pMZTvIkT1d+TFGvDOqodOclx0QWkkgi6Tdoa8gC8ffGAAqz9pzPTZWAybbsHHoED/ztMtkv/VoYTYyShUn81hA==
 
-uuid@7.0.3:
-  version "7.0.3"
-  resolved "https://registry.npmjs.org/uuid/-/uuid-7.0.3.tgz"
-  integrity sha512-DPSke0pXhTZgoF/d+WSt2QaKMCFSfx7QegxEWT+JOuHF5aWrKEn0G+ztjuJg/gG8/ItK+rbPCD/yNv8yyih6Cg==
-
-uuid@^8.3.2:
+uuid@8.3.2, uuid@^8.3.2:
   version "8.3.2"
   resolved "https://registry.npmjs.org/uuid/-/uuid-8.3.2.tgz"
   integrity sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==
@@ -8526,32 +8516,30 @@ vary@~1.1.2:
   resolved "https://registry.npmjs.org/vary/-/vary-1.1.2.tgz"
   integrity sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg==
 
-vis-data@7.0.0:
-  version "7.0.0"
-  resolved "https://registry.npmjs.org/vis-data/-/vis-data-7.0.0.tgz"
-  integrity sha512-qKpyAQ9UMT0QygLbCulgabKkgfo8aVkuWSqhvEiaah/iy/Dvj17iMFChUU+UIioorWlweXcp5ziXoMLIl7hTAg==
+vis-data@7.1.2:
+  version "7.1.2"
+  resolved "https://registry.npmjs.org/vis-data/-/vis-data-7.1.2.tgz"
+  integrity sha512-RPSegFxEcnp3HUEJSzhS2vBdbJ2PSsrYYuhRlpHp2frO/MfRtTYbIkkLZmPkA/Sg3pPfBlR235gcoKbtdm4mbw==
 
-vis-network-react@^1.3.6:
+"vis-network-react@https://github.com/DinerIsmail/vis-network-react.git#2dd266e111b78d7f6f5424bd495a0eef8ab2dbf4":
   version "1.3.6"
-  resolved "https://registry.npmjs.org/vis-network-react/-/vis-network-react-1.3.6.tgz"
-  integrity sha512-OlwcJwGsxlN5l0c+/9IrwVHZL3qw+v/PxYQZMSHnTgmQLaKN0gnlB9brYtXQN9y8Da0BCrjdIDBjE6zz+Dkzsw==
+  resolved "https://github.com/DinerIsmail/vis-network-react.git#2dd266e111b78d7f6f5424bd495a0eef8ab2dbf4"
   dependencies:
-    lodash "4.17.19"
-    moment "2.27.0"
-    uuid "7.0.3"
-    vis-data "7.0.0"
-    vis-network "8.2.0"
-    vis-util "4.3.4"
+    lodash "4.17.20"
+    uuid "8.3.2"
+    vis-data "7.1.2"
+    vis-network "9.1.2"
+    vis-util "5.0.2"
 
-vis-network@8.2.0:
-  version "8.2.0"
-  resolved "https://registry.npmjs.org/vis-network/-/vis-network-8.2.0.tgz"
-  integrity sha512-2fnI4jINbluGT0MmZoIk0XkYLRFPvEbTbhP0A1xUYhbUiO28ARhlIMfR3Z3I4eaEo/E0lGVZYWH+2DWyohG0tw==
+vis-network@9.1.2:
+  version "9.1.2"
+  resolved "https://registry.npmjs.org/vis-network/-/vis-network-9.1.2.tgz"
+  integrity sha512-BdapguKg7sk3NvdZaDsM7T6rNhOBFz0/F4ZScxctK4klRzQPLQPTEcmbioXaZhMkkgWymzBR3lFCxL1q+eYyAw==
 
-vis-util@4.3.4:
-  version "4.3.4"
-  resolved "https://registry.npmjs.org/vis-util/-/vis-util-4.3.4.tgz"
-  integrity sha512-hJIZNrwf4ML7FYjs+m+zjJfaNvhjk3/1hbMdQZVnwwpOFJS/8dMG8rdbOHXcKoIEM6U5VOh3HNpaDXxGkOZGpw==
+vis-util@5.0.2:
+  version "5.0.2"
+  resolved "https://registry.npmjs.org/vis-util/-/vis-util-5.0.2.tgz"
+  integrity sha512-oPDmPc4o0uQLoKpKai2XD1DjrhYsA7MRz75Wx9KmfX84e9LLgsbno7jVL5tR0K9eNVQkD6jf0Ei8NtbBHDkF1A==
 
 w3c-hr-time@^1.0.2:
   version "1.0.2"

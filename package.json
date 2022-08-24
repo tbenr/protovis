@@ -19,12 +19,8 @@
     "react-range": "^1.8.14",
     "react-scripts": "5.0.1",
     "typescript": "^4.7.4",
-    "vis-network-react": "^1.3.6",
+    "vis-network-react": "https://github.com/DinerIsmail/vis-network-react.git#2dd266e111b78d7f6f5424bd495a0eef8ab2dbf4",
     "web-vitals": "^2.1.4"
-  },
-  "overrides": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
   },
   "scripts": {
     "start": "react-scripts start",

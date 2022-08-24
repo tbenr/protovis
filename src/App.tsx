@@ -9,6 +9,9 @@ import Modal from 'react-modal'
 
 import hljs from 'highlight.js'
 import 'highlight.js/styles/default.css'
+import 'vis-network/styles/vis-network.min.css'
+
+import testData from './testData.json'
 
 const SLOT_WIDTH: number = 150
 const SLOT_HALF_WIDTH: number = SLOT_WIDTH / 2
@@ -17,10 +20,6 @@ const SLOT_PER_EPOCH: number = 32
 const DEFAULT_POLLING_PERIOD: number = 6000
 const DEFAULT_ENDPOINT: string = 'http://localhost:5051/teku/v1/debug/beacon/protoarray'
 const DEFAULT_POLL_MAX_HISTORY: number = 50
-
-const COLOR_VALID: string = 'green'
-const COLOR_INVALID: string = 'red'
-const COLOR_OPTIMISTIC: string = 'grey'
 
 const pollActiveAtStartup: boolean = false
 
@@ -44,76 +43,117 @@ function htmlTitle(html) {
 }
 
 
-function validationStatusToColor(validationStatus) {
+function validationStatusToColor(validationStatus, isHead) {
   switch (validationStatus) {
     case 'VALID':
-      return COLOR_VALID
+      return isHead ? '#00E000' : '#008000'
     case 'INVALID':
-      return COLOR_INVALID
+      return isHead ? '#E00000' : '#800000'
     case 'OPTIMISTIC':
-      return COLOR_OPTIMISTIC
+      return isHead ? '#E0E0E0' : '#808080'
   }
 }
 
 /**
  * 
  * Teku Specific
- * prerequisite:
+ * prerequisites:
  *  node.id must be blockRoot
  *  node.level must set as its slot
  *  node.value must be proportional to its weight
+ *  node.color should reflect validation status
  */
+
+function protoNodeToNetworkNode(protoNode) {
+  let isMerge = protoNode.executionBlockHash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+  let label = isMerge ? '🐼 ' : ''
+  let weight = BigNumber(protoNode.weight)
+  label += protoNode.blockRoot.substring(0, 8)
+  return {
+    id: protoNode.blockRoot,
+    title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(protoNode, null, ' ') + '</code></pre>'),
+    label: label,
+    level: parseInt(protoNode.slot),
+    value: weight.dividedBy(10000).toNumber(),
+    color: validationStatusToColor(protoNode.validationStatus, false),
+    protoNode: protoNode,
+    isMerge: isMerge,
+    weight: weight,
+    childs: []
+  }
+}
+
+function propagateRootsWeightToHeads(root: any) {
+  if (root.childs.length === 0) {
+    return [root]
+  } else {
+    let heads: any = []
+    root.childs.forEach(child => {
+      child.reverseWeight = root.reverseWeight.plus(child.weight)
+      heads = [...heads, ...propagateRootsWeightToHeads(child)]
+    })
+    return heads
+  }
+}
+
 function protoArrayToNetworkData(protoArray) {
   let nodes: any = {}
   let edges: any = []
-  let heads: any = {}
+  let heads: any = []
+  let roots: any = {}
+  let firstPOSNode: any
 
   protoArray.forEach(protoNode => {
-    let isMerge = protoNode.executionBlockHash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-    let label = isMerge ? '🐼 ': ''
-    label += protoNode.blockRoot.substring(0, 8)
-    nodes[protoNode.blockRoot] = {
-      id: protoNode.blockRoot,
-      title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(protoNode, null, ' ') + '</code></pre>'),
-      label: label,
-      level: parseInt(protoNode.slot),
-      value: BigNumber(protoNode.weight).dividedBy(10000).toNumber(),
-      color: validationStatusToColor(protoNode.validationStatus),
-      protoNode: protoNode,
-      isMerge: isMerge
-    }
+    nodes[protoNode.blockRoot] = protoNodeToNetworkNode(protoNode)
     edges.push({ from: protoNode.blockRoot, to: protoNode.parentRoot })
-    heads[protoNode.blockRoot] = protoNode.slot
   })
 
-  protoArray.forEach(protoNode => {
-    delete heads[protoNode.parentRoot]
+  // first pass: set additional flags and find roots 
 
-    let parent = nodes[protoNode.parentRoot]
+  protoArray.forEach(protoNode => {
+    let parent: any = nodes[protoNode.parentRoot]
+    if (parent === undefined) {
+      roots[protoNode.blockRoot] = nodes[protoNode.blockRoot]
+    } else {
+      parent.childs.push(nodes[protoNode.blockRoot])
+    }
+
     let node = nodes[protoNode.blockRoot]
 
-    if(parent === undefined) {
+    if (parent === undefined) {
       node.isFirstPOS = false
       return
     }
 
-    if(parent.isMerge === false && node.isMerge === true) {
+    if (parent.isMerge === false && node.isMerge === true) {
       node.isFirstPOS = true
+      firstPOSNode = node
     } else {
       node.isFirstPOS = false
     }
-   })
+  })
 
-  Object.keys(heads).forEach(head => {
-    nodes[head].isHead = true
+  // calculate canonical chains from each root
+  Object.keys(roots).forEach(root => {
+    let node = nodes[root]
+    node.isRoot = true
+    node.reverseWeight = node.weight
+    heads = [...heads, ...propagateRootsWeightToHeads(node)]
+  })
+
+  heads.forEach(head => {
+    nodes[head.id].isHead = true
+    nodes[head.id].color = validationStatusToColor(head.protoNode.validationStatus, true)
   })
 
   return {
-    heads: Object.keys(heads).sort((a, b) => BigNumber(heads[b]).comparedTo(heads[a])),
+    roots: roots,
+    heads: heads.sort((a, b) => b.reverseWeight.comparedTo(a.reverseWeight)),
     networkData: {
       nodes: Object.values(nodes) as any,
       edges: edges
-    }
+    },
+    firstPOSNode: firstPOSNode
   }
 }
 
@@ -124,7 +164,9 @@ function App() {
   const [fetchedProtoArraySample, setFetchedProtoArraySample] = useState<any>()
   const [currentProtoArraySampleIdx, setCurrentProtoArraySampleIdx] = useState<number>(0)
   const [data, setData] = useState(defaultdata)
-  const [heads, setHeads] = useState<string[]>([])
+  const [heads, setHeads] = useState<any[]>([])
+  const [roots, setRoots] = useState<any[]>([])
+  const [firstPOSNode, setFirstPOSNode] = useState<any | undefined>()
   const [headIdx, setheadIdx] = useState<number>(0)
   const [networkNodes, setNetwortNodes] = useState<any>([])
   const [network, setNetwort] = useState<any>()
@@ -132,7 +174,7 @@ function App() {
   const [poll, setPoll] = useState<boolean>(pollActiveAtStartup)
   const [pollTimer, setPollTimer] = useState<any>(0)
   const [followPoll, setFollowPoll] = React.useState(true)
-  const [followMostRectentHead, setFollowMostRectentHead] = React.useState(true);
+  const [followCanonicalHead, setFollowCanonicalHead] = React.useState(true)
 
   // settings
   const [protoArrayEndpoint, setProtoArrayEndpoint] = useState<string>(DEFAULT_ENDPOINT)
@@ -174,10 +216,10 @@ function App() {
     }
   }, [protoArraySamples, currentProtoArraySampleIdx, setCurrentProtoArraySampleIdx, followPoll])
 
-  const handleMostRecentHead = useCallback(() => {
+  const handleCanonicalHead = useCallback(() => {
     if (heads.length === 0) return
     network.fit({
-      nodes: [heads[0]],
+      nodes: [heads[0].id],
       animation: true
     })
     setheadIdx(0)
@@ -186,10 +228,12 @@ function App() {
   // render current data
   useEffect(() => {
     if (protoArraySamples.length === 0 || currentProtoArraySampleIdx >= protoArraySamples.length) return
-    const { heads, networkData } = protoArrayToNetworkData(protoArraySamples[currentProtoArraySampleIdx].protoArray)
+    const { firstPOSNode, roots, heads, networkData } = protoArrayToNetworkData(protoArraySamples[currentProtoArraySampleIdx].protoArray)
     setHeads(heads)
+    setRoots(roots)
+    setFirstPOSNode(firstPOSNode)
     setData(networkData)
-  }, [currentProtoArraySampleIdx, protoArraySamples, setData, setHeads])
+  }, [currentProtoArraySampleIdx, protoArraySamples, setData, setHeads, setRoots, setFirstPOSNode])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -218,11 +262,11 @@ function App() {
 
 
   useEffect(() => {
-    if (followMostRectentHead) {
-      const timer = setTimeout(handleMostRecentHead, 200)
+    if (followCanonicalHead) {
+      const timer = setTimeout(handleCanonicalHead, 200)
       return () => clearTimeout(timer)
     }
-  }, [followMostRectentHead, handleMostRecentHead])
+  }, [followCanonicalHead, handleCanonicalHead])
 
   const getNetwork = useCallback((a) => {
     setNetwort(a)
@@ -238,6 +282,8 @@ function App() {
     setFollowPoll(value === protoArraySamples.length - 1)
   }, [setCurrentProtoArraySampleIdx, setFollowPoll, protoArraySamples])
 
+
+  /*** settings **/
 
   const handleShowSettings = useCallback(() => {
     setShowSettings(true)
@@ -271,13 +317,15 @@ function App() {
     setPollMaxHistoryEdit(event.target.value)
   }, [setPollMaxHistoryEdit])
 
+  /*** head navigation callbacks **/
+
   const handlePreviousHead = useCallback(() => {
     if (heads.length === 0) return
 
     const previousHead = (headIdx + 1) % heads.length
 
     network.fit({
-      nodes: [heads[previousHead]],
+      nodes: [heads[previousHead].id],
       animation: true
     })
     setheadIdx(previousHead)
@@ -289,11 +337,13 @@ function App() {
     const nextHead = (Math.max(0, headIdx - 1)) % heads.length
 
     network.fit({
-      nodes: [heads[nextHead]],
+      nodes: [heads[nextHead].id],
       animation: true
     })
     setheadIdx(nextHead)
   }, [network, heads, headIdx, setheadIdx])
+
+  /*** import export callbacks **/
 
   const handleExportData = useCallback(() => {
     const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(
@@ -311,24 +361,29 @@ function App() {
     inputFile.current.click()
   }
 
+  const parseData = (input: any) => {
+    try {
+      let data: any[] = typeof input === 'string' ? JSON.parse(input) : input
+      if (data[0] !== undefined && data[0].timestamp === undefined) {
+        // single protoarray
+        return [{ timestamp: moment(), protoArray: data } as ProtoArraySample]
+      } else {
+        // multiple protoarrays
+        for (let sample of data) {
+          sample.timestamp = moment(sample.timestamp)
+        }
+        return data
+      }
+    } catch (e) {
+      alert("**Not valid JSON file!**")
+    }
+  }
+
   const readFileOnUpload = useCallback((uploadedFile: any) => {
     const fileReader: any = new FileReader()
     fileReader.onloadend = () => {
-      try {
-        let data: any[] = JSON.parse(fileReader.result)
-        if (data[0] !== undefined && data[0].timestamp === undefined) {
-          // single protoarray
-          setProtoArraySamples([{ timestamp: moment(), protoArray: data } as ProtoArraySample])
-        } else {
-          // multiple protoarrays
-          for (let sample of data) {
-            sample.timestamp = moment(sample.timestamp)
-          }
-          setProtoArraySamples(data)
-        }
-      } catch (e) {
-        alert("**Not valid JSON file!**")
-      }
+      let data: any[] | undefined = parseData(fileReader.result)
+      if (data !== undefined) setProtoArraySamples(data)
 
       inputFile.current.value = null
     }
@@ -337,20 +392,26 @@ function App() {
   }, [setProtoArraySamples, inputFile])
 
 
+  const handleLoadTestData = useCallback(() => {
+    let data: any[] | undefined = parseData(testData)
+    if (data !== undefined) setProtoArraySamples(data)
+  }, [setProtoArraySamples])
+
   const events = useMemo(() => {
     return {
       click: function (params) {
-        let node: any = (this as any).body.nodes[params.nodes[0]]
+        if (params.nodes.length === 0) return
+        let node: any = networkNodes.get(params.nodes[0])
         if (!node) return
-        let json: string = node.getTitle().childNodes[1].textContent
-        let blockRoot: string = JSON.parse(json).blockRoot
+        let blockRoot: string = node.protoNode.blockRoot
         navigator.clipboard.writeText(blockRoot)
         params.event = "[original event]"
       },
       doubleClick: function (params) {
-        let node: any = (this as any).body.nodes[params.nodes[0]]
+        if (params.nodes.length === 0) return
+        let node: any = networkNodes.get(params.nodes[0])
         if (!node) return
-        let json: string = node.getTitle().childNodes[1].textContent
+        let json: string = JSON.stringify(node.protoNode, null, ' ')
         navigator.clipboard.writeText(json)
         params.event = "[original event]"
       },
@@ -371,19 +432,18 @@ function App() {
         let minSlot: number = 0
         let maxSlot: number = 0
 
-        let firstPOSNode: any
-
-        networkNodes.forEach((node: any) => {
+        Object.keys(roots).forEach(rootId => {
+          let node = roots[rootId]
           if (!leftMostNode || node.level < minSlot) {
             minSlot = node.level
             leftMostNode = node
           }
-          if (node.level > maxSlot) maxSlot = node.level
-
-          if(node.isFirstPOS) {
-            firstPOSNode = node
-          }
         })
+
+        heads.forEach(head => {
+          if (head.level > maxSlot) maxSlot = head.level
+        })
+
         const minEpoch: number = Math.floor(minSlot / SLOT_PER_EPOCH)
         const maxEpoch: number = Math.floor(maxSlot / SLOT_PER_EPOCH)
         const leftMostNodeSlot: number = minSlot
@@ -433,7 +493,7 @@ function App() {
         }
 
         // terminal node
-        if(firstPOSNode) {
+        if (firstPOSNode) {
           const posLabel = '🐼 MERGE 🐼'
           const posNodePosition = network.getPosition(firstPOSNode.id)
           let x = posNodePosition.x - ctx.measureText(posLabel).width / 2
@@ -444,38 +504,27 @@ function App() {
       afterDrawing: function (ctx) {
         if (network === undefined || networkNodes === undefined || networkNodes.length === 0) return
 
-        networkNodes.forEach((node: any) => {
-          let idx = heads.indexOf(node.id)
-          let nodePositions = network.getPositions(node.id)
-          let position = nodePositions[node.id]
-          if (isNaN(position.x)) return
+        heads.forEach((head, idx) => {
+          let nodePositions = network.getPositions(head.id)
+          let position = nodePositions[head.id]
+          if (!position || isNaN(position.x)) return
           if (idx !== -1) {
-            ctx.strokeStyle = "#A6D5F7"
-            ctx.fillStyle = idx === headIdx ? "#FF4475" : "#004475"
+            ctx.shadowColor = "black"
+            ctx.shadowBlur = 5
+            ctx.fillStyle = "white"
+            let headLabel = idx + 1
+            let measure = ctx.measureText(headLabel)
+            let x = position.x - measure.width / 2
 
-          } else {
-            ctx.strokeStyle = node.color
-            ctx.fillStyle = node.color
+            let y = position.y - (measure.actualBoundingBoxDescent - measure.actualBoundingBoxAscent) / 2
+            ctx.strokeText(headLabel, x, y)
+            ctx.fillText(headLabel, x, y)
           }
-
-          ctx.beginPath()
-          ctx.arc(
-            position.x,
-            position.y,
-            5,
-            0,
-            2 * Math.PI,
-            false
-          )
-          ctx.closePath()
-
-          ctx.fill()
-          ctx.stroke()
         })
 
       },
     }
-  }, [network, networkNodes, heads, headIdx])
+  }, [network, networkNodes, heads, roots, firstPOSNode])
 
   return (
     <div className="App">
@@ -506,10 +555,11 @@ function App() {
       <div className="main">
         <div className="header">
           <button style={{ marginRight: 100 }} onClick={handleShowSettings}>Settings</button>
+          <button onClick={handleLoadTestData}>load test data</button>
           <button onClick={handleImportData}>import</button>
           <button onClick={handleExportData}>export</button>
           <div style={{ marginLeft: 150, marginRight: 150 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
-          <button onClick={handleMostRecentHead}>Center on most recent head</button>
+          <button onClick={handleCanonicalHead}>Center on canonical head</button>
           <button style={{ marginLeft: 100 }} onClick={handlePreviousHead}>&lt;</button>
           Cycle heads
           <button onClick={handleNextHead}>&gt;</button>
@@ -536,13 +586,13 @@ function App() {
                   x: true
                 },
                 shape: 'dot',
-                scaling: { min: 10, max: 50 }
+                scaling: { min: 15, max: 50 }
               },
               physics: {
-                enabled: true
-                //hierarchicalRepulsion: {
-                //  nodeDistance: SLOT_WIDTH + 5,
-                //},
+                enabled: true,
+                hierarchicalRepulsion: {
+                  nodeDistance: SLOT_WIDTH + 1,
+                },
               },
               interaction: {
                 navigationButtons: true,
@@ -577,10 +627,10 @@ function App() {
           <div style={{ width: '33%' }}>
             <label>
               <input type="checkbox"
-                checked={followMostRectentHead}
-                onChange={() => setFollowMostRectentHead(!followMostRectentHead)}
+                checked={followCanonicalHead}
+                onChange={() => setFollowCanonicalHead(!followCanonicalHead)}
               />
-              Always center on most recent head
+              Always center on canonical head
             </label>
           </div>
           <div className="importantText">{protoArraySamples?.length > 0 ? protoArraySamples[0].timestamp.toLocaleString() : 'N/A'}</div>

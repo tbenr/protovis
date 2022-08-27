@@ -55,3 +55,7 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+.myControlClassName {
+  padding: 1px 52px 1px 10px !important;
+}

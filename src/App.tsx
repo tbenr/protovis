@@ -7,6 +7,9 @@ import VisNetworkReactComponent from "vis-network-react"
 import { Range, getTrackBackground } from 'react-range'
 import Modal from 'react-modal'
 
+import Dropdown, { Option } from 'react-dropdown';
+import 'react-dropdown/style.css';
+
 import hljs from 'highlight.js'
 import 'highlight.js/styles/default.css'
 import 'vis-network/styles/vis-network.min.css'
@@ -23,7 +26,48 @@ const DEFAULT_POLL_MAX_HISTORY: number = 50
 
 const pollActiveAtStartup: boolean = false
 
-interface ProtoArraySample {
+enum SourceType {
+  teku = 'Teku',
+  prysm = 'Prysm'
+}
+
+enum NodeSizeMode {
+  nodeOnlyWeight = 'node only weight',
+  rootToHeadsCumulated = 'root->heads cumulation',
+  HeadsToRootCumulated = 'heads->root cumulation'
+}
+
+type ValidationStatus = 'INVALID' | 'OPTIMISTIC' | 'VALID'
+
+type NetworkNode = {
+  id: string
+  title: HTMLDivElement
+  label: string
+  level: number
+  value: number
+  color: string
+  forkchoiceNode: any
+  isMerge: boolean
+  isFirstPOS: boolean
+  parentRoot: string
+  isRoot: boolean
+  isHead: boolean
+  weight: BigNumber
+  validationStatus: ValidationStatus
+  cumulativeToRootWeight: BigNumber
+  cumulativeToHeadWeight: BigNumber
+  childs: NetworkNode[]
+}
+
+type IdToNetworkNode = {
+  [id: string]: NetworkNode;
+};
+
+
+const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.nodeOnlyWeight
+const DEFAULT_SOURCE_TYPE: SourceType = SourceType.teku
+
+type ForckchoiceDump = {
   timestamp: moment.Moment
   protoArray: any
 }
@@ -35,6 +79,10 @@ const defaultdata = {
   ],
 }
 
+function weightToNodeValue(weight: BigNumber) {
+  return weight.dividedBy(10000).toNumber()
+}
+
 function htmlTitle(html) {
   const container = document.createElement("div")
   container.style.cssText = 'text-align: left;'
@@ -43,14 +91,16 @@ function htmlTitle(html) {
 }
 
 
-function validationStatusToColor(validationStatus, isHead) {
+function validationStatusToColor(validationStatus: ValidationStatus, isHead: boolean) {
   switch (validationStatus) {
-    case 'VALID':
-      return isHead ? '#00E000' : '#008000'
     case 'INVALID':
       return isHead ? '#E00000' : '#800000'
     case 'OPTIMISTIC':
       return isHead ? '#E0E0E0' : '#808080'
+    case 'VALID':
+      return isHead ? '#00E000' : '#008000'
+    default: // unknown
+      return isHead ? '#202020' : '#000000'
   }
 }
 
@@ -64,61 +114,124 @@ function validationStatusToColor(validationStatus, isHead) {
  *  node.color should reflect validation status
  */
 
-function protoNodeToNetworkNode(protoNode) {
-  let isMerge = protoNode.executionBlockHash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+function forkchoiceNodeToNetworkNode_Teku(forkchoiceNode): NetworkNode {
+  let isMerge = forkchoiceNode.executionBlockHash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
   let label = isMerge ? '🐼 ' : ''
-  let weight = BigNumber(protoNode.weight)
-  label += protoNode.blockRoot.substring(0, 8)
+  let cumulativeToRootWeight = BigNumber(forkchoiceNode.weight)
+  label += forkchoiceNode.blockRoot.substring(0, 8)
   return {
-    id: protoNode.blockRoot,
-    title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(protoNode, null, ' ') + '</code></pre>'),
+    id: forkchoiceNode.blockRoot,
+    title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
     label: label,
-    level: parseInt(protoNode.slot),
-    value: weight.dividedBy(10000).toNumber(),
-    color: validationStatusToColor(protoNode.validationStatus, false),
-    protoNode: protoNode,
+    level: parseInt(forkchoiceNode.slot),
+    value: 0,
+    color: validationStatusToColor(forkchoiceNode.validationStatus, false),
+    forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
-    weight: weight,
+    isFirstPOS: false,
+    parentRoot: forkchoiceNode.parentRoot,
+    isRoot: false,
+    isHead: false,
+    validationStatus: forkchoiceNode.validationStatus,
+    cumulativeToRootWeight: cumulativeToRootWeight,
+    cumulativeToHeadWeight: BigNumber(0),
+    weight: BigNumber(0),
     childs: []
   }
 }
 
-function propagateRootsWeightToHeads(root: any) {
+function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
+  let isMerge = forkchoiceNode.execution_payload !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+  let label = isMerge ? '🐼 ' : ''
+  let cumulativeToRootWeight = BigNumber(forkchoiceNode.weight)
+  label += forkchoiceNode.root.substring(0, 8)
+  let validationStatus: ValidationStatus = forkchoiceNode.execution_optimistic ? 'OPTIMISTIC' : 'VALID'
+  return {
+    id: forkchoiceNode.root,
+    title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
+    label: label,
+    level: parseInt(forkchoiceNode.slot),
+    value: 0,
+    color: validationStatusToColor(validationStatus, false),
+    forkchoiceNode: forkchoiceNode,
+    isMerge: isMerge,
+    isFirstPOS: false,
+    parentRoot: forkchoiceNode.parent_root,
+    isRoot: false,
+    isHead: false,
+    validationStatus: validationStatus,
+    cumulativeToRootWeight: cumulativeToRootWeight,
+    cumulativeToHeadWeight: BigNumber(0),
+    weight: BigNumber(0),
+    childs: []
+  }
+}
+
+
+function changeNodeSizeMode(node: NetworkNode, mode: NodeSizeMode) {
+
+  switch (mode) {
+    case NodeSizeMode.nodeOnlyWeight:
+      node.value = weightToNodeValue(node.weight)
+      break
+    case NodeSizeMode.HeadsToRootCumulated:
+      node.value = weightToNodeValue(node.cumulativeToRootWeight)
+      break
+    case NodeSizeMode.rootToHeadsCumulated:
+      node.value = weightToNodeValue(node.cumulativeToHeadWeight)
+  }
+
+  return node;
+}
+
+
+function calculateCumulativeToHeadWeights(root: NetworkNode): NetworkNode[] {
   if (root.childs.length === 0) {
     return [root]
   } else {
-    let heads: any = []
+    let heads: NetworkNode[] = []
     root.childs.forEach(child => {
-      child.reverseWeight = root.reverseWeight.plus(child.weight)
-      heads = [...heads, ...propagateRootsWeightToHeads(child)]
+      child.cumulativeToHeadWeight = root.cumulativeToHeadWeight.plus(child.weight)
+      heads = [...heads, ...calculateCumulativeToHeadWeights(child)]
     })
     return heads
   }
 }
 
-function protoArrayToNetworkData(protoArray) {
-  let nodes: any = {}
+function forkchoiceDumpNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, nodeSizeMode: NodeSizeMode) {
+  let nodes: IdToNetworkNode = {}
   let edges: any = []
-  let heads: any = []
+  let heads: NetworkNode[] = []
+  let headsIds: any = []
   let roots: any = {}
   let firstPOSNode: any
 
-  protoArray.forEach(protoNode => {
-    nodes[protoNode.blockRoot] = protoNodeToNetworkNode(protoNode)
-    edges.push({ from: protoNode.blockRoot, to: protoNode.parentRoot })
+  forckchoiceNodes.forEach(forckchoiceNode => {
+    switch (sourceType) {
+      case SourceType.teku:
+        nodes[forckchoiceNode.blockRoot] = forkchoiceNodeToNetworkNode_Teku(forckchoiceNode)
+        edges.push({ from: forckchoiceNode.blockRoot, to: forckchoiceNode.parentRoot })
+        headsIds.push(forckchoiceNode.blockRoot)
+        break;
+      case SourceType.prysm:
+        nodes[forckchoiceNode.root] = forkchoiceNodeToNetworkNode_Prysm(forckchoiceNode)
+        edges.push({ from: forckchoiceNode.root, to: forckchoiceNode.parent_root })
+        headsIds.push(forckchoiceNode.root)
+    }
+
   })
 
   // first pass: set additional flags and find roots 
+  Object.keys(nodes).forEach(nodeId => {
+    let node = nodes[nodeId];
+    delete headsIds[node.parentRoot]
 
-  protoArray.forEach(protoNode => {
-    let parent: any = nodes[protoNode.parentRoot]
+    let parent: any = nodes[node.parentRoot]
     if (parent === undefined) {
-      roots[protoNode.blockRoot] = nodes[protoNode.blockRoot]
+      roots[node.id] = nodes[node.id]
     } else {
-      parent.childs.push(nodes[protoNode.blockRoot])
+      parent.childs.push(node)
     }
-
-    let node = nodes[protoNode.blockRoot]
 
     if (parent === undefined) {
       node.isFirstPOS = false
@@ -133,24 +246,38 @@ function protoArrayToNetworkData(protoArray) {
     }
   })
 
-  // calculate canonical chains from each root
-  Object.keys(roots).forEach(root => {
-    let node = nodes[root]
-    node.isRoot = true
-    node.reverseWeight = node.weight
-    heads = [...heads, ...propagateRootsWeightToHeads(node)]
+  // calculate node weights from the CumulativeToRoot
+  Object.keys(nodes).forEach(nodeId => {
+    let node = nodes[nodeId];
+    node.weight = node.cumulativeToRootWeight;
+    node.childs.forEach(child => {
+      node.weight = node.weight.minus(child.cumulativeToRootWeight);
+    })
+  })
+
+  // calculate cumulative weights to head
+  Object.keys(roots).forEach(rootId => {
+    let root = nodes[rootId]
+    root.isRoot = true
+    root.cumulativeToHeadWeight = root.weight
+    heads = [...heads, ...calculateCumulativeToHeadWeights(root)]
+  })
+
+  // set final node size
+  Object.keys(nodes).forEach(nodeId => {
+    changeNodeSizeMode(nodes[nodeId], nodeSizeMode)
   })
 
   heads.forEach(head => {
     nodes[head.id].isHead = true
-    nodes[head.id].color = validationStatusToColor(head.protoNode.validationStatus, true)
+    nodes[head.id].color = validationStatusToColor(head.validationStatus, true)
   })
 
   return {
     roots: roots,
-    heads: heads.sort((a, b) => b.reverseWeight.comparedTo(a.reverseWeight)),
+    heads: heads.sort((a, b) => b.cumulativeToHeadWeight.comparedTo(a.cumulativeToHeadWeight)),
     networkData: {
-      nodes: Object.values(nodes) as any,
+      nodes: Object.values(nodes),
       edges: edges
     },
     firstPOSNode: firstPOSNode
@@ -160,9 +287,9 @@ function protoArrayToNetworkData(protoArray) {
 function App() {
   const [showSettings, setShowSettings] = useState<boolean>(false)
 
-  const [protoArraySamples, setProtoArraySamples] = useState<ProtoArraySample[]>([])
-  const [fetchedProtoArraySample, setFetchedProtoArraySample] = useState<any>()
-  const [currentProtoArraySampleIdx, setCurrentProtoArraySampleIdx] = useState<number>(0)
+  const [forckchoiceDumpArray, setForckchoiceDumpArray] = useState<ForckchoiceDump[]>([])
+  const [fetchedForckchoiceDump, setFetchedForckchoiceDump] = useState<any>()
+  const [currentForckchoiceDumpIdx, setCurrentForckchoiceDumpIdx] = useState<number>(0)
   const [data, setData] = useState(defaultdata)
   const [heads, setHeads] = useState<any[]>([])
   const [roots, setRoots] = useState<any[]>([])
@@ -176,15 +303,19 @@ function App() {
   const [followPoll, setFollowPoll] = React.useState(true)
   const [followCanonicalHead, setFollowCanonicalHead] = React.useState(true)
 
+  const [nodeSizeMode, setNodeSizeMode] = useState<NodeSizeMode>(DEFAULT_NODE_SIZE_MODE)
+
   // settings
   const [protoArrayEndpoint, setProtoArrayEndpoint] = useState<string>(DEFAULT_ENDPOINT)
   const [pollPeriod, setPollPeriod] = useState<number>(DEFAULT_POLLING_PERIOD)
   const [pollMaxHistory, setPollMaxHistory] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
+  const [sourceType, setSourceType] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
 
   // settings edit
   const [protoArrayEndpointEdit, setProtoArrayEndpointEdit] = useState<string>(DEFAULT_ENDPOINT)
   const [pollPeriodEdit, setPollPeriodEdit] = useState<number>(DEFAULT_POLLING_PERIOD)
   const [pollMaxHistoryEdit, setPollMaxHistoryEdit] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
+  const [sourceTypeEdit, setSourceTypeEdit] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
 
   const inputFile = useRef<any>(null)
 
@@ -192,29 +323,29 @@ function App() {
   const getProtoArray = useCallback(async () => {
     const res = await fetch(protoArrayEndpoint)
     const data = await res.json()
-    setFetchedProtoArraySample(data)
-  }, [setFetchedProtoArraySample, protoArrayEndpoint])
+    setFetchedForckchoiceDump(data)
+  }, [setFetchedForckchoiceDump, protoArrayEndpoint])
 
   // save history
   useEffect(() => {
-    if (!fetchedProtoArraySample) return
+    if (!fetchedForckchoiceDump) return
 
-    setProtoArraySamples(protoArraySamples => {
+    setForckchoiceDumpArray(protoArraySamples => {
       while (protoArraySamples.length >= pollMaxHistory) {
         protoArraySamples.shift()
       }
-      return [...protoArraySamples, { timestamp: moment(), protoArray: fetchedProtoArraySample }]
+      return [...protoArraySamples, { timestamp: moment(), protoArray: fetchedForckchoiceDump }]
     }
     )
-  }, [pollMaxHistory, fetchedProtoArraySample, setProtoArraySamples])
+  }, [pollMaxHistory, fetchedForckchoiceDump, setForckchoiceDumpArray])
 
   // set current index vis, following latest updates
   useEffect(() => {
-    if (!protoArraySamples || protoArraySamples.length === 0) return
+    if (!forckchoiceDumpArray || forckchoiceDumpArray.length === 0) return
     if (followPoll) {
-      setCurrentProtoArraySampleIdx(protoArraySamples.length - 1)
+      setCurrentForckchoiceDumpIdx(forckchoiceDumpArray.length - 1)
     }
-  }, [protoArraySamples, currentProtoArraySampleIdx, setCurrentProtoArraySampleIdx, followPoll])
+  }, [forckchoiceDumpArray, currentForckchoiceDumpIdx, setCurrentForckchoiceDumpIdx, followPoll])
 
   const handleCanonicalHead = useCallback(() => {
     if (heads.length === 0) return
@@ -227,13 +358,13 @@ function App() {
 
   // render current data
   useEffect(() => {
-    if (protoArraySamples.length === 0 || currentProtoArraySampleIdx >= protoArraySamples.length) return
-    const { firstPOSNode, roots, heads, networkData } = protoArrayToNetworkData(protoArraySamples[currentProtoArraySampleIdx].protoArray)
+    if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
+    const { firstPOSNode, roots, heads, networkData } = forkchoiceDumpNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].protoArray, sourceType, nodeSizeMode)
     setHeads(heads)
     setRoots(roots)
     setFirstPOSNode(firstPOSNode)
-    setData(networkData)
-  }, [currentProtoArraySampleIdx, protoArraySamples, setData, setHeads, setRoots, setFirstPOSNode])
+    setData(networkData as any)
+  }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, setData, setHeads, setRoots, setFirstPOSNode, nodeSizeMode])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -278,9 +409,9 @@ function App() {
 
   const handleSlide = useCallback((values) => {
     const value = values[0]
-    setCurrentProtoArraySampleIdx(parseInt(value))
-    setFollowPoll(value === protoArraySamples.length - 1)
-  }, [setCurrentProtoArraySampleIdx, setFollowPoll, protoArraySamples])
+    setCurrentForckchoiceDumpIdx(parseInt(value))
+    setFollowPoll(value === forckchoiceDumpArray.length - 1)
+  }, [setCurrentForckchoiceDumpIdx, setFollowPoll, forckchoiceDumpArray])
 
 
   /*** settings **/
@@ -295,6 +426,7 @@ function App() {
     setProtoArrayEndpoint(protoArrayEndpointEdit)
     setPollPeriod(pollPeriodEdit)
     setPollMaxHistory(pollMaxHistoryEdit)
+    setSourceType(sourceTypeEdit)
 
     if (poll) {
       clearInterval(pollTimer)
@@ -302,7 +434,18 @@ function App() {
       setPollTimer(timer)
     }
 
-  }, [setShowSettings, getProtoArray, pollTimer, poll, protoArrayEndpointEdit, pollPeriodEdit, pollMaxHistoryEdit, setProtoArrayEndpoint, setPollPeriod, setPollMaxHistory])
+  }, [setShowSettings,
+    getProtoArray,
+    sourceTypeEdit,
+    pollTimer,
+    poll,
+    protoArrayEndpointEdit,
+    pollPeriodEdit,
+    pollMaxHistoryEdit,
+    setProtoArrayEndpoint,
+    setPollPeriod,
+    setPollMaxHistory,
+    setSourceType])
 
   const handleUpdateEndpoint = useCallback((event) => {
     setProtoArrayEndpointEdit(event.target.value)
@@ -316,6 +459,11 @@ function App() {
   const handleSetPollMaxHistory = useCallback((event) => {
     setPollMaxHistoryEdit(event.target.value)
   }, [setPollMaxHistoryEdit])
+
+  const handleSourceType = useCallback((type: Option) => {
+
+    setSourceTypeEdit(type.value as SourceType)
+  }, [setSourceTypeEdit])
 
   /*** head navigation callbacks **/
 
@@ -343,30 +491,53 @@ function App() {
     setheadIdx(nextHead)
   }, [network, heads, headIdx, setheadIdx])
 
+  const handleNodeSizeMode = useCallback((type: Option) => {
+
+    setNodeSizeMode(type.value as NodeSizeMode)
+  }, [setNodeSizeMode])
+
   /*** import export callbacks **/
 
   const handleExportData = useCallback(() => {
     const jsonString = `data:text/json;chatset=utf-8,${encodeURIComponent(
-      JSON.stringify(protoArraySamples, null, "\t")
+      JSON.stringify(forckchoiceDumpArray, null, "\t")
     )}`
     const link = document.createElement("a")
     link.href = jsonString
     link.download = "protoarray_dumps.json"
 
     link.click()
-  }, [protoArraySamples])
+  }, [forckchoiceDumpArray])
 
   const handleImportData = () => {
     if (!inputFile?.current) return
     inputFile.current.click()
   }
 
-  const parseData = (input: any) => {
+  const parseTekuData = (input: any) => {
     try {
       let data: any[] = typeof input === 'string' ? JSON.parse(input) : input
       if (data[0] !== undefined && data[0].timestamp === undefined) {
         // single protoarray
-        return [{ timestamp: moment(), protoArray: data } as ProtoArraySample]
+        return [{ timestamp: moment(), protoArray: data } as ForckchoiceDump]
+      } else {
+        // multiple protoarrays
+        for (let sample of data) {
+          sample.timestamp = moment(sample.timestamp)
+        }
+        return data
+      }
+    } catch (e) {
+      alert("**Not valid JSON file!**")
+    }
+  }
+
+  const parsePrysmData = (input: any) => {
+    try {
+      let data: any = typeof input === 'string' ? JSON.parse(input) : input
+      if (!Array.isArray(data)) {
+        // single protoarray
+        return [{ timestamp: moment(), protoArray: data.forkchoice_nodes } as ForckchoiceDump]
       } else {
         // multiple protoarrays
         for (let sample of data) {
@@ -382,33 +553,47 @@ function App() {
   const readFileOnUpload = useCallback((uploadedFile: any) => {
     const fileReader: any = new FileReader()
     fileReader.onloadend = () => {
-      let data: any[] | undefined = parseData(fileReader.result)
-      if (data !== undefined) setProtoArraySamples(data)
+      let data: any[] | undefined;
+      switch (sourceType) {
+        case SourceType.teku:
+          data = parseTekuData(fileReader.result)
+          break;
+        case SourceType.prysm:
+          data = parsePrysmData(fileReader.result)
+      }
+      if (data !== undefined) setForckchoiceDumpArray(data)
 
       inputFile.current.value = null
     }
     if (uploadedFile !== undefined)
       fileReader.readAsText(uploadedFile)
-  }, [setProtoArraySamples, inputFile])
+  }, [setForckchoiceDumpArray, inputFile, sourceType])
 
 
   const handleLoadTestData = useCallback(() => {
-    let data: any[] | undefined = parseData(testData)
-    if (data !== undefined) setProtoArraySamples(data)
-  }, [setProtoArraySamples])
+    let data: any[] | undefined = parseTekuData(testData)
+    if (data !== undefined) setForckchoiceDumpArray(data)
+  }, [setForckchoiceDumpArray])
 
   const events = useMemo(() => {
     return {
       click: function (params) {
         if (params.nodes.length === 0) return
-        let node: any = networkNodes.get(params.nodes[0])
+        let node: NetworkNode = networkNodes.get(params.nodes[0])
         if (!node) return
-        let blockRoot: string = node.protoNode.blockRoot
+        let blockRoot: string = node.forkchoiceNode.blockRoot
         if (navigator.clipboard === undefined) {
           alert('clipboard not available in unsecure context')
         } else {
           navigator.clipboard.writeText(blockRoot)
         }
+
+        console.log({
+          value: node.value,
+          weight: node.weight.toFixed(),
+          cumulativeToHeadWeight: node.cumulativeToHeadWeight.toFixed(),
+          cumulativeToRootWeight: node.cumulativeToRootWeight.toFixed()
+        })
 
         params.event = "[original event]"
       },
@@ -540,12 +725,13 @@ function App() {
       <Modal
         isOpen={showSettings}
         contentLabel="Settings"
+        ariaHideApp={false}
       >
         <button onClick={handleCloseSettings}>Close Settings</button>
         <br></br>
         <br></br>
         <label>
-          Teku protoarray Endpoint:
+          Protoarray Endpoint:
           <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} />
         </label>
         <br></br>
@@ -560,6 +746,12 @@ function App() {
           Max history:
           <input type="number" style={{ width: '100px' }} value={pollMaxHistoryEdit} onChange={handleSetPollMaxHistory} />
         </label>
+        <br></br>
+        <br></br>
+        <label>
+          Source type
+          <Dropdown options={Object.values(SourceType)} onChange={handleSourceType} value={sourceTypeEdit} placeholder="Select Source Type" />
+        </label>
       </Modal>
       <div className="main">
         <div className="header">
@@ -567,11 +759,15 @@ function App() {
           <button onClick={handleLoadTestData}>load test data</button>
           <button onClick={handleImportData}>import</button>
           <button onClick={handleExportData}>export</button>
-          <div style={{ marginLeft: 150, marginRight: 150 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
+          <div style={{ marginLeft: 100, marginRight: 100 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
           <button onClick={handleCanonicalHead}>Center on canonical head</button>
           <button style={{ marginLeft: 100 }} onClick={handlePreviousHead}>&lt;</button>
           Cycle heads
           <button onClick={handleNextHead}>&gt;</button>
+          <div style={{ marginLeft: 100, width: 400, display: 'inline-flex' }}>
+            Node Size mode
+            <Dropdown controlClassName='myControlClassName' options={Object.values(NodeSizeMode)} onChange={handleNodeSizeMode} value={nodeSizeMode} placeholder="Select Note Size Mode" />
+          </div>
 
           <input type='file' id='file' onChange={(e: any) => readFileOnUpload(e.target.files[0])} ref={inputFile} style={{ display: 'none' }} />
         </div>
@@ -642,7 +838,7 @@ function App() {
               Always center on canonical head
             </label>
           </div>
-          <div className="importantText">{protoArraySamples?.length > 0 ? protoArraySamples[0].timestamp.toLocaleString() : 'N/A'}</div>
+          <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[0].timestamp.toLocaleString() : 'N/A'}</div>
           <div className="slider">
 
             <Range renderTrack={({ props, children }) => (
@@ -663,10 +859,10 @@ function App() {
                     width: "100%",
                     borderRadius: "4px",
                     background: getTrackBackground({
-                      values: [currentProtoArraySampleIdx],
+                      values: [currentForckchoiceDumpIdx],
                       colors: ["#548BF4", "#ccc"],
                       min: 0,
-                      max: protoArraySamples.length - 1
+                      max: forckchoiceDumpArray.length - 1
                     }),
                     alignSelf: "center"
                   }}
@@ -690,7 +886,7 @@ function App() {
                     boxShadow: '0px 2px 6px #AAA'
                   }}
                 >
-                  {protoArraySamples.length > 0 &&
+                  {forckchoiceDumpArray.length > 0 &&
                     <div
                       style={{
                         position: 'absolute',
@@ -704,7 +900,7 @@ function App() {
                         backgroundColor: '#548BF4'
                       }}
                     >
-                      {protoArraySamples[currentProtoArraySampleIdx]?.timestamp.local().format('HH:mm:ss')}
+                      {forckchoiceDumpArray[currentForckchoiceDumpIdx]?.timestamp.local().format('HH:mm:ss')}
                     </div>}
                   <div
                     style={{
@@ -722,18 +918,18 @@ function App() {
                     ...props.style,
                     height: '16px',
                     width: '5px',
-                    backgroundColor: index < currentProtoArraySampleIdx ? '#548BF4' : '#ccc'
+                    backgroundColor: index < currentForckchoiceDumpIdx ? '#548BF4' : '#ccc'
                   }}
                 />
               )}
-              min={0} max={Math.max(1, protoArraySamples.length - 1)}
+              min={0} max={Math.max(1, forckchoiceDumpArray.length - 1)}
               step={1}
-              values={[currentProtoArraySampleIdx]}
+              values={[currentForckchoiceDumpIdx]}
               onChange={handleSlide} />
 
           </div>
 
-          <div className="importantText">{protoArraySamples?.length > 0 ? protoArraySamples[protoArraySamples.length - 1].timestamp.toLocaleString() : 'N/A'}</div>
+          <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[forckchoiceDumpArray.length - 1].timestamp.toLocaleString() : 'N/A'}</div>
         </div>
       </div>
     </div>

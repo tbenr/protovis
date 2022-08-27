@@ -528,7 +528,7 @@ function App() {
         return data
       }
     } catch (e) {
-      alert("**Not valid JSON file!**")
+      alert("**Not valid Teku JSON file!**")
     }
   }
 
@@ -546,7 +546,7 @@ function App() {
         return data
       }
     } catch (e) {
-      alert("**Not valid JSON file!**")
+      alert("**Not valid Prysm JSON file!**")
     }
   }
 

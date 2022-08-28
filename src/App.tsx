@@ -33,19 +33,22 @@ enum SourceType {
 
 enum NodeSizeMode {
   nodeOnlyWeight = 'node only weight',
-  rootToHeadsCumulated = 'root->heads cumulation',
-  HeadsToRootCumulated = 'heads->root cumulation'
+  rootToHeadsCumulated = 'root → heads cumulation',
+  HeadsToRootCumulated = 'root ← heads cumulation'
 }
 
 type ValidationStatus = 'INVALID' | 'OPTIMISTIC' | 'VALID'
 
-type NetworkNode = {
+type BaseVisNode = {
   id: string
   title: HTMLDivElement
   label: string
   level: number
   value: number
   color: string
+}
+
+type ExistingNetworkNode = BaseVisNode & {
   forkchoiceNode: any
   isMerge: boolean
   isFirstPOS: boolean
@@ -56,20 +59,34 @@ type NetworkNode = {
   validationStatus: ValidationStatus
   cumulativeToRootWeight: BigNumber
   cumulativeToHeadWeight: BigNumber
-  childs: NetworkNode[]
+  childs: ExistingNetworkNode[]
+  isMissingSlot: false
 }
+
+type MissingNetworkNode = BaseVisNode & {
+  // shapeProperties: {borderDashes: true},
+  choosen: false,
+  isMissingSlot: true
+}
+
+type NetworkNode = ExistingNetworkNode | MissingNetworkNode
 
 type IdToNetworkNode = {
   [id: string]: NetworkNode;
 };
 
 
-const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.nodeOnlyWeight
+const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.rootToHeadsCumulated
 const DEFAULT_SOURCE_TYPE: SourceType = SourceType.teku
+const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
+const DEFAULT_PHYSICS: boolean = false
 
 type ForckchoiceDump = {
   timestamp: moment.Moment
-  protoArray: any
+  forkchoiceNodes: any[]
+
+  // allow additional params
+  [x: string | number | symbol]: unknown
 }
 
 const defaultdata = {
@@ -104,6 +121,22 @@ function validationStatusToColor(validationStatus: ValidationStatus, isHead: boo
   }
 }
 
+function createMissingSlotNode(slot: number, parent: NetworkNode, child: NetworkNode) {
+  return {
+    id: slot + '_' + child.id,
+    title: htmlTitle('missing'),
+    label: '',
+    level: slot,
+    shape: 'diamond',
+    scaling: { min: 5, max: 5 },
+    choosen: false,
+    isMissingSlot: true,
+    size: 5,
+    value: 0,
+    color: '#404040',
+  }
+}
+
 /**
  * 
  * Teku Specific
@@ -132,6 +165,7 @@ function forkchoiceNodeToNetworkNode_Teku(forkchoiceNode): NetworkNode {
     parentRoot: forkchoiceNode.parentRoot,
     isRoot: false,
     isHead: false,
+    isMissingSlot: false,
     validationStatus: forkchoiceNode.validationStatus,
     cumulativeToRootWeight: cumulativeToRootWeight,
     cumulativeToHeadWeight: BigNumber(0),
@@ -159,6 +193,7 @@ function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
     isHead: false,
+    isMissingSlot: false,
     validationStatus: validationStatus,
     cumulativeToRootWeight: cumulativeToRootWeight,
     cumulativeToHeadWeight: BigNumber(0),
@@ -168,7 +203,7 @@ function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
 }
 
 
-function changeNodeSizeMode(node: NetworkNode, mode: NodeSizeMode) {
+function changeNodeSizeMode(node: ExistingNetworkNode, mode: NodeSizeMode) {
 
   switch (mode) {
     case NodeSizeMode.nodeOnlyWeight:
@@ -185,11 +220,11 @@ function changeNodeSizeMode(node: NetworkNode, mode: NodeSizeMode) {
 }
 
 
-function calculateCumulativeToHeadWeights(root: NetworkNode): NetworkNode[] {
+function calculateCumulativeToHeadWeights(root: ExistingNetworkNode): ExistingNetworkNode[] {
   if (root.childs.length === 0) {
     return [root]
   } else {
-    let heads: NetworkNode[] = []
+    let heads: ExistingNetworkNode[] = []
     root.childs.forEach(child => {
       child.cumulativeToHeadWeight = root.cumulativeToHeadWeight.plus(child.weight)
       heads = [...heads, ...calculateCumulativeToHeadWeights(child)]
@@ -198,35 +233,41 @@ function calculateCumulativeToHeadWeights(root: NetworkNode): NetworkNode[] {
   }
 }
 
-function forkchoiceDumpNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, nodeSizeMode: NodeSizeMode) {
+function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, nodeSizeMode: NodeSizeMode, drawMissingSlotNodes: boolean) {
   let nodes: IdToNetworkNode = {}
   let edges: any = []
-  let heads: NetworkNode[] = []
+  let heads: ExistingNetworkNode[] = []
   let headsIds: any = []
   let roots: any = {}
   let firstPOSNode: any
 
-  forckchoiceNodes.forEach(forckchoiceNode => {
-    switch (sourceType) {
-      case SourceType.teku:
-        nodes[forckchoiceNode.blockRoot] = forkchoiceNodeToNetworkNode_Teku(forckchoiceNode)
-        edges.push({ from: forckchoiceNode.blockRoot, to: forckchoiceNode.parentRoot })
-        headsIds.push(forckchoiceNode.blockRoot)
-        break;
-      case SourceType.prysm:
-        nodes[forckchoiceNode.root] = forkchoiceNodeToNetworkNode_Prysm(forckchoiceNode)
-        edges.push({ from: forckchoiceNode.root, to: forckchoiceNode.parent_root })
-        headsIds.push(forckchoiceNode.root)
-    }
+  let parentBlockRootAttr
+  let rootBlockAttr
+  let mapper
+  switch (sourceType) {
+    case SourceType.teku:
+      rootBlockAttr = 'blockRoot'
+      parentBlockRootAttr = 'parentRoot'
+      mapper = forkchoiceNodeToNetworkNode_Teku
+      break;
+    case SourceType.prysm:
+      rootBlockAttr = 'root'
+      parentBlockRootAttr = 'parent_root'
+      mapper = forkchoiceNodeToNetworkNode_Prysm
+  }
 
+  forckchoiceNodes.forEach(forckchoiceNode => {
+    nodes[forckchoiceNode[rootBlockAttr]] = mapper(forckchoiceNode)
+    headsIds.push(forckchoiceNode[rootBlockAttr])
   })
 
-  // first pass: set additional flags and find roots 
+  // first pass: set additional flags and find roots and define edges
   Object.keys(nodes).forEach(nodeId => {
     let node = nodes[nodeId];
+    if (node.isMissingSlot) return
     delete headsIds[node.parentRoot]
 
-    let parent: any = nodes[node.parentRoot]
+    let parent = nodes[node.parentRoot] as ExistingNetworkNode
     if (parent === undefined) {
       roots[node.id] = nodes[node.id]
     } else {
@@ -236,6 +277,20 @@ function forkchoiceDumpNodesToNetworkData(forckchoiceNodes, sourceType: SourceTy
     if (parent === undefined) {
       node.isFirstPOS = false
       return
+    }
+
+    if (drawMissingSlotNodes) {
+      // generate missing nodes and connect node to parent
+      let lastChild = node as NetworkNode
+      for (let slot = node.level - 1; slot > parent.level; slot--) {
+        let newChild = createMissingSlotNode(slot, parent, node) as NetworkNode
+        nodes[newChild.id] = newChild
+        edges.push({ from: lastChild.id, to: newChild.id, arrows: '' })
+        lastChild = newChild
+      }
+      edges.push({ from: lastChild.id, to: parent.id })
+    } else {
+      edges.push({ from: nodeId, to: parent.id })
     }
 
     if (parent.isMerge === false && node.isMerge === true) {
@@ -248,7 +303,8 @@ function forkchoiceDumpNodesToNetworkData(forckchoiceNodes, sourceType: SourceTy
 
   // calculate node weights from the CumulativeToRoot
   Object.keys(nodes).forEach(nodeId => {
-    let node = nodes[nodeId];
+    var node = nodes[nodeId] as ExistingNetworkNode;
+    if (node.isMissingSlot) return
     node.weight = node.cumulativeToRootWeight;
     node.childs.forEach(child => {
       node.weight = node.weight.minus(child.cumulativeToRootWeight);
@@ -257,7 +313,7 @@ function forkchoiceDumpNodesToNetworkData(forckchoiceNodes, sourceType: SourceTy
 
   // calculate cumulative weights to head
   Object.keys(roots).forEach(rootId => {
-    let root = nodes[rootId]
+    let root = nodes[rootId] as ExistingNetworkNode
     root.isRoot = true
     root.cumulativeToHeadWeight = root.weight
     heads = [...heads, ...calculateCumulativeToHeadWeights(root)]
@@ -265,12 +321,15 @@ function forkchoiceDumpNodesToNetworkData(forckchoiceNodes, sourceType: SourceTy
 
   // set final node size
   Object.keys(nodes).forEach(nodeId => {
-    changeNodeSizeMode(nodes[nodeId], nodeSizeMode)
+    let node = nodes[nodeId];
+    if (node.isMissingSlot) return
+    changeNodeSizeMode(node, nodeSizeMode)
   })
 
   heads.forEach(head => {
-    nodes[head.id].isHead = true
-    nodes[head.id].color = validationStatusToColor(head.validationStatus, true)
+    let node = nodes[head.id] as ExistingNetworkNode
+    node.isHead = true
+    node.color = validationStatusToColor(head.validationStatus, true)
   })
 
   return {
@@ -291,7 +350,7 @@ function App() {
   const [fetchedForckchoiceDump, setFetchedForckchoiceDump] = useState<any>()
   const [currentForckchoiceDumpIdx, setCurrentForckchoiceDumpIdx] = useState<number>(0)
   const [data, setData] = useState(defaultdata)
-  const [heads, setHeads] = useState<any[]>([])
+  const [heads, setHeads] = useState<NetworkNode[]>([])
   const [roots, setRoots] = useState<any[]>([])
   const [firstPOSNode, setFirstPOSNode] = useState<any | undefined>()
   const [headIdx, setheadIdx] = useState<number>(0)
@@ -310,12 +369,17 @@ function App() {
   const [pollPeriod, setPollPeriod] = useState<number>(DEFAULT_POLLING_PERIOD)
   const [pollMaxHistory, setPollMaxHistory] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
   const [sourceType, setSourceType] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
+  const [drawMissingSlotNodes, setDrawMissingSlotNodes] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
+  const [physics, setPhysics] = useState<boolean>(DEFAULT_PHYSICS)
 
   // settings edit
   const [protoArrayEndpointEdit, setProtoArrayEndpointEdit] = useState<string>(DEFAULT_ENDPOINT)
   const [pollPeriodEdit, setPollPeriodEdit] = useState<number>(DEFAULT_POLLING_PERIOD)
   const [pollMaxHistoryEdit, setPollMaxHistoryEdit] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
   const [sourceTypeEdit, setSourceTypeEdit] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
+  const [drawMissingSlotNodesEdit, setDrawMissingSlotNodesEdit] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
+  const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
+
 
   const inputFile = useRef<any>(null)
 
@@ -330,11 +394,11 @@ function App() {
   useEffect(() => {
     if (!fetchedForckchoiceDump) return
 
-    setForckchoiceDumpArray(protoArraySamples => {
-      while (protoArraySamples.length >= pollMaxHistory) {
-        protoArraySamples.shift()
+    setForckchoiceDumpArray(forchchoiceDumps => {
+      while (forchchoiceDumps.length >= pollMaxHistory) {
+        forchchoiceDumps.shift()
       }
-      return [...protoArraySamples, { timestamp: moment(), protoArray: fetchedForckchoiceDump }]
+      return [...forchchoiceDumps, { timestamp: moment(), forkchoiceNodes: fetchedForckchoiceDump }]
     }
     )
   }, [pollMaxHistory, fetchedForckchoiceDump, setForckchoiceDumpArray])
@@ -347,6 +411,12 @@ function App() {
     }
   }, [forckchoiceDumpArray, currentForckchoiceDumpIdx, setCurrentForckchoiceDumpIdx, followPoll])
 
+  useEffect(() => {
+    if(network && physics) {
+      network.redraw()
+    }
+  },[network, physics,currentForckchoiceDumpIdx])
+
   const handleCanonicalHead = useCallback(() => {
     if (heads.length === 0) return
     network.fit({
@@ -356,15 +426,24 @@ function App() {
     setheadIdx(0)
   }, [heads, network, setheadIdx])
 
+  /*
+  const translate = useMemo(() => {
+    if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
+    return forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
+  },[currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes])
+*/
   // render current data
   useEffect(() => {
+    //if (translate === undefined) return
     if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
-    const { firstPOSNode, roots, heads, networkData } = forkchoiceDumpNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].protoArray, sourceType, nodeSizeMode)
+    //const { firstPOSNode, roots, heads, networkData } = translate
+    const { firstPOSNode, roots, heads, networkData } = forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
     setHeads(heads)
     setRoots(roots)
     setFirstPOSNode(firstPOSNode)
     setData(networkData as any)
-  }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, setData, setHeads, setRoots, setFirstPOSNode, nodeSizeMode])
+  }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes, setData, setHeads, setRoots, setFirstPOSNode])
+ // }, [translate, setData, setHeads, setRoots, setFirstPOSNode])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -427,6 +506,9 @@ function App() {
     setPollPeriod(pollPeriodEdit)
     setPollMaxHistory(pollMaxHistoryEdit)
     setSourceType(sourceTypeEdit)
+    setSourceType(sourceTypeEdit)
+    setDrawMissingSlotNodes(drawMissingSlotNodesEdit)
+    setPhysics(physicsEdit)
 
     if (poll) {
       clearInterval(pollTimer)
@@ -442,15 +524,18 @@ function App() {
     protoArrayEndpointEdit,
     pollPeriodEdit,
     pollMaxHistoryEdit,
+    drawMissingSlotNodesEdit,
+    physicsEdit,
     setProtoArrayEndpoint,
     setPollPeriod,
     setPollMaxHistory,
-    setSourceType])
+    setSourceType,
+    setPhysics,
+    setDrawMissingSlotNodes])
 
   const handleUpdateEndpoint = useCallback((event) => {
     setProtoArrayEndpointEdit(event.target.value)
   }, [setProtoArrayEndpointEdit])
-
 
   const handleSetPollingPeriod = useCallback((event) => {
     setPollPeriodEdit(event.target.value)
@@ -461,9 +546,17 @@ function App() {
   }, [setPollMaxHistoryEdit])
 
   const handleSourceType = useCallback((type: Option) => {
-
     setSourceTypeEdit(type.value as SourceType)
   }, [setSourceTypeEdit])
+
+  const handleSetDrawMissingSlotNodes = useCallback((event) => {
+    setDrawMissingSlotNodesEdit(event.target.checked)
+  }, [setDrawMissingSlotNodesEdit])
+
+  const handleSetPhysics = useCallback((event) => {
+    setPhysicsEdit(event.target.checked)
+  }, [setPhysicsEdit])
+
 
   /*** head navigation callbacks **/
 
@@ -519,11 +612,13 @@ function App() {
       let data: any[] = typeof input === 'string' ? JSON.parse(input) : input
       if (data[0] !== undefined && data[0].timestamp === undefined) {
         // single protoarray
-        return [{ timestamp: moment(), protoArray: data } as ForckchoiceDump]
+        return [{ timestamp: moment(), forkchoiceNodes: data } as ForckchoiceDump]
       } else {
         // multiple protoarrays
-        for (let sample of data) {
-          sample.timestamp = moment(sample.timestamp)
+        for (let dump of data) {
+          dump.timestamp = moment(dump.timestamp)
+          dump.forkchoiceNodes = dump.protoArray
+          delete dump.protoArray
         }
         return data
       }
@@ -532,21 +627,24 @@ function App() {
     }
   }
 
-  const parsePrysmData = (input: any) => {
+  const parsePrysmData = (input: any): ForckchoiceDump[] => {
     try {
       let data: any = typeof input === 'string' ? JSON.parse(input) : input
       if (!Array.isArray(data)) {
         // single protoarray
-        return [{ timestamp: moment(), protoArray: data.forkchoice_nodes } as ForckchoiceDump]
+        return [{ timestamp: moment(), forkchoiceNodes: data.forkchoice?.forkchoice_nodes }] as ForckchoiceDump[]
       } else {
         // multiple protoarrays
         for (let sample of data) {
-          sample.timestamp = moment(sample.timestamp)
+          sample.timestamp = moment()
+          sample.forkchoiceNodes = sample.forkchoice?.forkchoice_nodes
+          delete sample.protoArray
         }
-        return data
+        return data as ForckchoiceDump[]
       }
     } catch (e) {
       alert("**Not valid Prysm JSON file!**")
+      return []
     }
   }
 
@@ -575,12 +673,53 @@ function App() {
     if (data !== undefined) setForckchoiceDumpArray(data)
   }, [setForckchoiceDumpArray])
 
+  const visNetworkOptions = useMemo(() => {
+    let config = {
+      height: '95%',
+      layout: {
+        randomSeed: 2,
+        hierarchical: {
+          enabled: true,
+          direction: 'LR',
+          sortMethod: 'directed',
+          levelSeparation: SLOT_WIDTH
+        }
+      },
+      edges: { arrows: 'to' },
+      nodes: {
+        fixed: {
+          x: true
+        },
+        shape: 'dot',
+        scaling: { min: 15, max: 50 }
+      },
+      physics: {
+        enabled: physics,
+
+        //hierarchicalRepulsion: {
+        //   nodeDistance: 200,
+        // },
+      },
+      interaction: {
+        navigationButtons: true,
+        keyboard: true,
+        dragNodes: true
+      },
+    }
+
+    if(physics) {
+      config.layout.hierarchical['nodeSpacing'] = SLOT_WIDTH
+    }
+
+    return config;
+  },[physics])
+
   const events = useMemo(() => {
     return {
       click: function (params) {
         if (params.nodes.length === 0) return
         let node: NetworkNode = networkNodes.get(params.nodes[0])
-        if (!node) return
+        if (!node || node.isMissingSlot) return
         let blockRoot: string = node.forkchoiceNode.blockRoot
         if (navigator.clipboard === undefined) {
           alert('clipboard not available in unsecure context')
@@ -715,7 +854,6 @@ function App() {
             ctx.fillText(headLabel, x, y)
           }
         })
-
       },
     }
   }, [network, networkNodes, heads, roots, firstPOSNode])
@@ -752,6 +890,24 @@ function App() {
           Source type
           <Dropdown options={Object.values(SourceType)} onChange={handleSourceType} value={sourceTypeEdit} placeholder="Select Source Type" />
         </label>
+        <br></br>
+        <br></br>
+        <label>
+          <input type="checkbox"
+            checked={drawMissingSlotNodesEdit}
+            onChange={handleSetDrawMissingSlotNodes}
+          />
+          Draw missing slot nodes (improves fork visualization)
+        </label>
+        <br></br>
+        <br></br>
+        <label>
+          <input type="checkbox"
+            checked={physicsEdit}
+            onChange={handleSetPhysics}
+          />
+          Physics
+        </label>
       </Modal>
       <div className="main">
         <div className="header">
@@ -774,37 +930,7 @@ function App() {
         <div className="network">
           <VisNetworkReactComponent
             data={data}
-            options={{
-              height: '95%',
-              layout: {
-                randomSeed: 2,
-                hierarchical: {
-                  enabled: true,
-                  direction: 'LR',
-                  sortMethod: 'directed',
-                  levelSeparation: SLOT_WIDTH
-                }
-              },
-              edges: { arrows: 'to' },
-              nodes: {
-                fixed: {
-                  x: true
-                },
-                shape: 'dot',
-                scaling: { min: 15, max: 50 }
-              },
-              physics: {
-                enabled: true,
-                hierarchicalRepulsion: {
-                  nodeDistance: SLOT_WIDTH + 1,
-                },
-              },
-              interaction: {
-                navigationButtons: true,
-                keyboard: true,
-                dragNodes: true
-              },
-            }}
+            options={visNetworkOptions}
             events={events}
             getNodes={getNodes}
             getNetwork={getNetwork}
@@ -815,7 +941,7 @@ function App() {
             <label>
               <input type="checkbox"
                 defaultChecked={poll}
-                onChange={() => togglePoll(!poll)}
+                onChange={(event) => togglePoll(event.target.checked)}
               />
               Poll endpoint for data
             </label>
@@ -824,7 +950,7 @@ function App() {
             <label>
               <input type="checkbox"
                 checked={followPoll}
-                onChange={() => setFollowPoll(!followPoll)}
+                onChange={(event) => setFollowPoll(event.target.checked)}
               />
               Follow Polling
             </label>
@@ -833,7 +959,7 @@ function App() {
             <label>
               <input type="checkbox"
                 checked={followCanonicalHead}
-                onChange={() => setFollowCanonicalHead(!followCanonicalHead)}
+                onChange={(event) => setFollowCanonicalHead(event.target.checked)}
               />
               Always center on canonical head
             </label>

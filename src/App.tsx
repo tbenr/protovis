@@ -20,6 +20,8 @@ const SLOT_WIDTH: number = 150
 const SLOT_HALF_WIDTH: number = SLOT_WIDTH / 2
 const SLOT_PER_EPOCH: number = 32
 
+const FAR_FUTURE_SLOT = '18446744073709551615'
+
 const DEFAULT_POLLING_PERIOD: number = 6000
 const DEFAULT_ENDPOINT: string = 'http://localhost:5051/teku/v1/debug/beacon/protoarray'
 const DEFAULT_POLL_MAX_HISTORY: number = 50
@@ -28,7 +30,8 @@ const pollActiveAtStartup: boolean = false
 
 enum SourceType {
   teku = 'Teku',
-  prysm = 'Prysm'
+  prysm = 'Prysm',
+  numbus = 'Nimbus'
 }
 
 enum NodeSizeMode {
@@ -202,6 +205,35 @@ function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
   }
 }
 
+function forkchoiceNodeToNetworkNode_Numbus(forkchoiceNode): NetworkNode | undefined {
+  if (forkchoiceNode.slot === FAR_FUTURE_SLOT) return
+  let isMerge = forkchoiceNode.execution_payload_root !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+  let label = isMerge ? '🐼 ' : ''
+  let cumulativeToRootWeight = BigNumber(forkchoiceNode.weight)
+  label += forkchoiceNode.block_root.substring(0, 8)
+  let validationStatus: ValidationStatus = forkchoiceNode.execution_optimistic ? 'OPTIMISTIC' : 'VALID'
+  return {
+    id: forkchoiceNode.block_root,
+    title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
+    label: label,
+    level: parseInt(forkchoiceNode.slot),
+    value: 0,
+    color: validationStatusToColor(validationStatus, false),
+    forkchoiceNode: forkchoiceNode,
+    isMerge: isMerge,
+    isFirstPOS: false,
+    parentRoot: forkchoiceNode.parent_root,
+    isRoot: false,
+    isHead: false,
+    isMissingSlot: false,
+    validationStatus: validationStatus,
+    cumulativeToRootWeight: cumulativeToRootWeight,
+    cumulativeToHeadWeight: BigNumber(0),
+    weight: BigNumber(0),
+    childs: []
+  }
+}
+
 
 function changeNodeSizeMode(node: ExistingNetworkNode, mode: NodeSizeMode) {
 
@@ -241,22 +273,25 @@ function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, 
   let roots: any = {}
   let firstPOSNode: any
 
-  let parentBlockRootAttr
   let rootBlockAttr
   let mapper
   switch (sourceType) {
     case SourceType.teku:
       rootBlockAttr = 'blockRoot'
-      parentBlockRootAttr = 'parentRoot'
       mapper = forkchoiceNodeToNetworkNode_Teku
       break;
     case SourceType.prysm:
       rootBlockAttr = 'root'
-      parentBlockRootAttr = 'parent_root'
       mapper = forkchoiceNodeToNetworkNode_Prysm
+      break;
+    case SourceType.numbus:
+      rootBlockAttr = 'block_root'
+      mapper = forkchoiceNodeToNetworkNode_Numbus
   }
 
   forckchoiceNodes.forEach(forckchoiceNode => {
+    let node = mapper(forckchoiceNode)
+    if (node === undefined) return
     nodes[forckchoiceNode[rootBlockAttr]] = mapper(forckchoiceNode)
     headsIds.push(forckchoiceNode[rootBlockAttr])
   })
@@ -378,8 +413,7 @@ function App() {
   const [pollMaxHistoryEdit, setPollMaxHistoryEdit] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
   const [sourceTypeEdit, setSourceTypeEdit] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
   const [drawMissingSlotNodesEdit, setDrawMissingSlotNodesEdit] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
-  const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
-
+  const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_PHYSICS)
 
   const inputFile = useRef<any>(null)
 
@@ -411,12 +445,6 @@ function App() {
     }
   }, [forckchoiceDumpArray, currentForckchoiceDumpIdx, setCurrentForckchoiceDumpIdx, followPoll])
 
-  useEffect(() => {
-    if(network && physics) {
-      network.redraw()
-    }
-  },[network, physics,currentForckchoiceDumpIdx])
-
   const handleCanonicalHead = useCallback(() => {
     if (heads.length === 0) return
     network.fit({
@@ -426,24 +454,16 @@ function App() {
     setheadIdx(0)
   }, [heads, network, setheadIdx])
 
-  /*
-  const translate = useMemo(() => {
-    if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
-    return forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
-  },[currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes])
-*/
   // render current data
   useEffect(() => {
-    //if (translate === undefined) return
     if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
-    //const { firstPOSNode, roots, heads, networkData } = translate
+
     const { firstPOSNode, roots, heads, networkData } = forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
     setHeads(heads)
     setRoots(roots)
     setFirstPOSNode(firstPOSNode)
     setData(networkData as any)
   }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes, setData, setHeads, setRoots, setFirstPOSNode])
- // }, [translate, setData, setHeads, setRoots, setFirstPOSNode])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -557,7 +577,6 @@ function App() {
     setPhysicsEdit(event.target.checked)
   }, [setPhysicsEdit])
 
-
   /*** head navigation callbacks **/
 
   const handlePreviousHead = useCallback(() => {
@@ -627,6 +646,28 @@ function App() {
     }
   }
 
+  const parseNumbusData = (input: any) => {
+    const filter = (node: any) => { return node.slot !== FAR_FUTURE_SLOT }
+    const timestampFormat = 'YYYY-MM-DD_HH-mm-ss'
+    try {
+      let data: any = typeof input === 'string' ? JSON.parse(input) : input
+      if (!Array.isArray(data)) {
+        // single protoarray
+        return [{ timestamp: moment(data.time, timestampFormat), forkchoiceNodes: data.protoArray.filter(filter) } as ForckchoiceDump]
+      } else {
+        // multiple protoarrays
+        for (let dump of data) {
+          dump.timestamp = moment(dump.time, timestampFormat)
+          dump.forkchoiceNodes = dump.protoArray.filter(filter)
+          delete dump.protoArray
+        }
+        return data
+      }
+    } catch (e) {
+      alert("**Not valid Nimbus JSON file!**")
+    }
+  }
+
   const parsePrysmData = (input: any): ForckchoiceDump[] => {
     try {
       let data: any = typeof input === 'string' ? JSON.parse(input) : input
@@ -658,6 +699,9 @@ function App() {
           break;
         case SourceType.prysm:
           data = parsePrysmData(fileReader.result)
+          break;
+        case SourceType.numbus:
+          data = parseNumbusData(fileReader.result)
       }
       if (data !== undefined) setForckchoiceDumpArray(data)
 
@@ -672,47 +716,6 @@ function App() {
     let data: any[] | undefined = parseTekuData(testData)
     if (data !== undefined) setForckchoiceDumpArray(data)
   }, [setForckchoiceDumpArray])
-
-  const visNetworkOptions = useMemo(() => {
-    let config = {
-      height: '95%',
-      layout: {
-        randomSeed: 2,
-        hierarchical: {
-          enabled: true,
-          direction: 'LR',
-          sortMethod: 'directed',
-          levelSeparation: SLOT_WIDTH
-        }
-      },
-      edges: { arrows: 'to' },
-      nodes: {
-        fixed: {
-          x: true
-        },
-        shape: 'dot',
-        scaling: { min: 15, max: 50 }
-      },
-      physics: {
-        enabled: physics,
-
-        //hierarchicalRepulsion: {
-        //   nodeDistance: 200,
-        // },
-      },
-      interaction: {
-        navigationButtons: true,
-        keyboard: true,
-        dragNodes: true
-      },
-    }
-
-    if(physics) {
-      config.layout.hierarchical['nodeSpacing'] = SLOT_WIDTH
-    }
-
-    return config;
-  },[physics])
 
   const events = useMemo(() => {
     return {
@@ -930,7 +933,39 @@ function App() {
         <div className="network">
           <VisNetworkReactComponent
             data={data}
-            options={visNetworkOptions}
+            options={{
+              height: '95%',
+              layout: {
+                randomSeed: 2,
+                hierarchical: {
+                  enabled: true,
+                  direction: 'LR',
+                  sortMethod: 'directed',
+                  ...(physics ? {} : { nodeSpacing: SLOT_WIDTH }),
+                  levelSeparation: SLOT_WIDTH
+                }
+              },
+              edges: { arrows: 'to' },
+              nodes: {
+                fixed: {
+                  x: true
+                },
+                shape: 'dot',
+                scaling: { min: 15, max: 50 }
+              },
+              physics: {
+                enabled: physics,
+
+                //hierarchicalRepulsion: {
+                //   nodeDistance: 200,
+                // },
+              },
+              interaction: {
+                navigationButtons: true,
+                keyboard: true,
+                dragNodes: true
+              },
+            }}
             events={events}
             getNodes={getNodes}
             getNetwork={getNetwork}

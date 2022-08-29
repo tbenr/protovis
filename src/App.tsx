@@ -31,7 +31,7 @@ const pollActiveAtStartup: boolean = false
 enum SourceType {
   teku = 'Teku',
   prysm = 'Prysm',
-  numbus = 'Nimbus'
+  nimbus = 'Nimbus'
 }
 
 enum NodeSizeMode {
@@ -284,7 +284,7 @@ function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, 
       rootBlockAttr = 'root'
       mapper = forkchoiceNodeToNetworkNode_Prysm
       break;
-    case SourceType.numbus:
+    case SourceType.nimbus:
       rootBlockAttr = 'block_root'
       mapper = forkchoiceNodeToNetworkNode_Numbus
   }
@@ -642,29 +642,30 @@ function App() {
         return data
       }
     } catch (e) {
-      alert("**Not valid Teku JSON file!**")
+      alert("**Not valid Teku JSON file!**\nerror: " + e)
+      return []
     }
   }
 
-  const parseNumbusData = (input: any) => {
+  const parseNimbusData = (input: any) => {
     const filter = (node: any) => { return node.slot !== FAR_FUTURE_SLOT }
-    const timestampFormat = 'YYYY-MM-DD_HH-mm-ss'
     try {
       let data: any = typeof input === 'string' ? JSON.parse(input) : input
       if (!Array.isArray(data)) {
         // single protoarray
-        return [{ timestamp: moment(data.time, timestampFormat), forkchoiceNodes: data.protoArray.filter(filter) } as ForckchoiceDump]
+        return [{ timestamp: moment(data.time), forkchoiceNodes: data.protoArray.filter(filter) } as ForckchoiceDump]
       } else {
         // multiple protoarrays
         for (let dump of data) {
-          dump.timestamp = moment(dump.time, timestampFormat)
+          dump.timestamp = moment(dump.time)
           dump.forkchoiceNodes = dump.protoArray.filter(filter)
           delete dump.protoArray
         }
         return data
       }
     } catch (e) {
-      alert("**Not valid Nimbus JSON file!**")
+      alert("**Not valid Nimbus JSON file!**\nerror: " + e)
+      return []
     }
   }
 
@@ -684,7 +685,7 @@ function App() {
         return data as ForckchoiceDump[]
       }
     } catch (e) {
-      alert("**Not valid Prysm JSON file!**")
+      alert("**Not valid Prysm JSON file!**\nerror: " + e)
       return []
     }
   }
@@ -700,8 +701,8 @@ function App() {
         case SourceType.prysm:
           data = parsePrysmData(fileReader.result)
           break;
-        case SourceType.numbus:
-          data = parseNumbusData(fileReader.result)
+        case SourceType.nimbus:
+          data = parseNimbusData(fileReader.result)
       }
       if (data !== undefined) setForckchoiceDumpArray(data)
 

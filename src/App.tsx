@@ -82,7 +82,7 @@ type IdToNetworkNode = {
 const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.rootToHeadsCumulated
 const DEFAULT_SOURCE_TYPE: SourceType = SourceType.teku
 const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
-const DEFAULT_PHYSICS: boolean = false
+const DEFAULT_PHYSICS: boolean = true
 
 type ForckchoiceDump = {
   timestamp: moment.Moment
@@ -447,8 +447,9 @@ function App() {
 
   const handleCanonicalHead = useCallback(() => {
     if (heads.length === 0) return
-    network.fit({
-      nodes: [heads[0].id],
+    network.moveTo({
+      position: network.getPosition(heads[0].id),
+      offset: { x: SLOT_WIDTH * 3, y: 0 },
       animation: true
     })
     setheadIdx(0)

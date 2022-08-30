@@ -25,6 +25,16 @@ const app = express();
 
 app.use(helmet())
 
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-eval'"],
+      connectSrc: ["'*'"]
+    },
+  })
+)
+
 app.disable('x-powered-by');
 
 

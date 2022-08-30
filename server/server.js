@@ -5,9 +5,10 @@ const basicAuth = require('express-basic-auth')
 const helmet = require('helmet');
 const https = require('https');
 const fs = require('fs');
+const morgan = require('morgan')
 
 const PORT = process.env.PORT
-const SECURE_PORT = process.env.PORT
+const SECURE_PORT = process.env.SECURE_PORT
 const PROTO_ENDPOINT = process.env.PROTO_ENDPOINT;
 const BASIC_USER = process.env.BASIC_USER;
 const BASIC_PASS = process.env.BASIC_PASS;
@@ -47,6 +48,8 @@ if (BASIC_USER) {
   }))
   console.log(`basic authentication enabled`)
 }
+
+app.use(morgan('common'))
 
 // Have Node serve the files for our built React app
 app.use(express.static(path.resolve(__dirname, '../build')));

@@ -6,7 +6,8 @@ const helmet = require('helmet');
 const https = require('https');
 const fs = require('fs');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT
+const SECURE_PORT = process.env.PORT
 const PROTO_ENDPOINT = process.env.PROTO_ENDPOINT;
 const BASIC_USER = process.env.BASIC_USER;
 const BASIC_PASS = process.env.BASIC_PASS;
@@ -30,7 +31,7 @@ app.use(
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-eval'"],
-      connectSrc: ["'*'"]
+      connectSrc: ["http:", "https:"]
     },
   })
 )
@@ -65,12 +66,18 @@ app.get('*', (req, res) => {
 
 // start server
 
-app.listen(PORT, () => {
-  console.log(`protovis backend app listening on port ${PORT}`)
-})
+if (PORT) {
+  app.listen(PORT, () => {
+    console.log(`protovis backend app listening on port ${PORT}`)
+  })
+} else {
+  console.log(`protovis backend app - no http port opened`)
+}
 
-if (httpsOptions) {
-  https.createServer(httpsOptions, app).listen(PORT + 1, () => {
-    console.log(`protovis backend app listening on port ${PORT + 1} in HTTPS`)
+if (httpsOptions && SECURE_PORT) {
+  https.createServer(httpsOptions, app).listen(SECURE_PORT, () => {
+    console.log(`protovis backend app listening on port ${SECURE_PORT} in HTTPS`)
   });
+} else {
+  console.log(`protovis backend app - no https port opened`)
 }

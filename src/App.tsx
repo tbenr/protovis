@@ -637,8 +637,10 @@ function App() {
         // multiple protoarrays
         for (let dump of data) {
           dump.timestamp = moment(dump.timestamp)
-          dump.forkchoiceNodes = dump.protoArray
-          delete dump.protoArray
+          if(dump.protoArray) {
+            dump.forkchoiceNodes = dump.protoArray
+            delete dump.protoArray
+          }
         }
         return data
       }
@@ -659,8 +661,10 @@ function App() {
         // multiple protoarrays
         for (let dump of data) {
           dump.timestamp = moment(dump.time)
-          dump.forkchoiceNodes = dump.protoArray.filter(filter)
-          delete dump.protoArray
+          if(dump.protoArray) {
+            dump.forkchoiceNodes = dump.protoArray.filter(filter)
+            delete dump.protoArray
+          }
         }
         return data
       }
@@ -680,8 +684,10 @@ function App() {
         // multiple protoarrays
         for (let sample of data) {
           sample.timestamp = moment()
-          sample.forkchoiceNodes = sample.forkchoice?.forkchoice_nodes
-          delete sample.protoArray
+          if(sample.forkchoice?.forkchoice_nodes) {
+            sample.forkchoiceNodes = sample.forkchoice?.forkchoice_nodes
+            delete sample.forkchoice.forkchoice_nodes
+          }
         }
         return data as ForckchoiceDump[]
       }

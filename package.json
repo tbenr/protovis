@@ -1,6 +1,6 @@
 {
   "name": "proto-vis",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "dependencies": {
     "@testing-library/jest-dom": "^5.16.5",
@@ -20,7 +20,7 @@
     "react-range": "^1.8.14",
     "react-scripts": "5.0.1",
     "typescript": "^4.7.4",
-    "vis-network-react": "https://github.com/DinerIsmail/vis-network-react.git#2dd266e111b78d7f6f5424bd495a0eef8ab2dbf4",
+    "vis-network-react": "https://github.com/DinerIsmail/vis-network-react.git#7f5fd4bdd30f4a10cbc999d1e2ac4a431da97d33",
     "web-vitals": "^2.1.4"
   },
   "overrides": {

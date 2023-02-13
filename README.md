@@ -1,6 +1,6 @@
 # ProtoArray visualization tool
 
-**Currently supporting TEKU data only**
+**Currently supporting standard fork choice debug api format and old Teku, Prysm and Nimbus proprietary format**
 
 <img width="2159" alt="image" src="https://user-images.githubusercontent.com/15999009/186437551-d0ecba58-7f24-4f9b-87c2-633f59434e99.png">
 

@@ -23,15 +23,16 @@ const SLOT_PER_EPOCH: number = 32
 const FAR_FUTURE_SLOT = '18446744073709551615'
 
 const DEFAULT_POLLING_PERIOD: number = 6000
-const DEFAULT_ENDPOINT: string = 'http://localhost:5051/teku/v1/debug/beacon/protoarray'
+const DEFAULT_ENDPOINT: string = 'http://localhost:5051/eth/v1/debug/fork_choice'
 const DEFAULT_POLL_MAX_HISTORY: number = 50
 
 const pollActiveAtStartup: boolean = false
 
 enum SourceType {
-  teku = 'Teku',
-  prysm = 'Prysm',
-  nimbus = 'Nimbus'
+  teku = 'Teku (22.12.0 or earlier)',
+  prysm = 'Prysm (deprecated)',
+  nimbus = 'Nimbus (deprecated)',
+  standard = 'Standard'
 }
 
 enum NodeSizeMode {
@@ -80,7 +81,7 @@ type IdToNetworkNode = {
 
 
 const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.rootToHeadsCumulated
-const DEFAULT_SOURCE_TYPE: SourceType = SourceType.teku
+const DEFAULT_SOURCE_TYPE: SourceType = SourceType.standard
 const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
 const DEFAULT_PHYSICS: boolean = true
 
@@ -234,6 +235,35 @@ function forkchoiceNodeToNetworkNode_Numbus(forkchoiceNode): NetworkNode | undef
   }
 }
 
+function forkchoiceNodeToNetworkNode_Standard(forkchoiceNode): NetworkNode | undefined {
+  if (forkchoiceNode.slot === FAR_FUTURE_SLOT) return
+  let isMerge = forkchoiceNode.execution_block_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+  let label = isMerge ? '🐼 ' : ''
+  let cumulativeToRootWeight = BigNumber(forkchoiceNode.weight)
+  label += forkchoiceNode.block_root.substring(0, 8)
+  let validationStatus: ValidationStatus = forkchoiceNode.validity.toUpperCase()
+  return {
+    id: forkchoiceNode.block_root,
+    title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
+    label: label,
+    level: parseInt(forkchoiceNode.slot),
+    value: 0,
+    color: validationStatusToColor(validationStatus, false),
+    forkchoiceNode: forkchoiceNode,
+    isMerge: isMerge,
+    isFirstPOS: false,
+    parentRoot: forkchoiceNode.parent_root,
+    isRoot: false,
+    isHead: false,
+    isMissingSlot: false,
+    validationStatus: validationStatus,
+    cumulativeToRootWeight: cumulativeToRootWeight,
+    cumulativeToHeadWeight: BigNumber(0),
+    weight: BigNumber(0),
+    childs: []
+  }
+}
+
 
 function changeNodeSizeMode(node: ExistingNetworkNode, mode: NodeSizeMode) {
 
@@ -287,6 +317,11 @@ function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, 
     case SourceType.nimbus:
       rootBlockAttr = 'block_root'
       mapper = forkchoiceNodeToNetworkNode_Numbus
+      break;
+    case SourceType.standard:
+      rootBlockAttr = 'block_root'
+      mapper = forkchoiceNodeToNetworkNode_Standard
+
   }
 
   forckchoiceNodes.forEach(forckchoiceNode => {
@@ -379,6 +414,8 @@ function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, 
 }
 
 function App() {
+  const [globalError, setGlobalError] = useState<string | undefined>();
+
   const [showSettings, setShowSettings] = useState<boolean>(false)
 
   const [forckchoiceDumpArray, setForckchoiceDumpArray] = useState<ForckchoiceDump[]>([])
@@ -457,14 +494,18 @@ function App() {
 
   // render current data
   useEffect(() => {
-    if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
+    try {
+      if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
 
-    const { firstPOSNode, roots, heads, networkData } = forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
-    setHeads(heads)
-    setRoots(roots)
-    setFirstPOSNode(firstPOSNode)
-    setData(networkData as any)
-  }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes, setData, setHeads, setRoots, setFirstPOSNode])
+      const { firstPOSNode, roots, heads, networkData } = forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
+      setHeads(heads)
+      setRoots(roots)
+      setFirstPOSNode(firstPOSNode)
+      setData(networkData as any)
+    } catch (e) {
+      setGlobalError("error loading data - verify source type in settings (" + e + ")");
+    }
+  }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes, setData, setHeads, setRoots, setFirstPOSNode, setGlobalError])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -637,7 +678,7 @@ function App() {
         // multiple protoarrays
         for (let dump of data) {
           dump.timestamp = moment(dump.timestamp)
-          if(dump.protoArray) {
+          if (dump.protoArray) {
             dump.forkchoiceNodes = dump.protoArray
             delete dump.protoArray
           }
@@ -661,8 +702,41 @@ function App() {
         // multiple protoarrays
         for (let dump of data) {
           dump.timestamp = moment(dump.time)
-          if(dump.protoArray) {
+          if (dump.protoArray) {
             dump.forkchoiceNodes = dump.protoArray.filter(filter)
+            delete dump.protoArray
+          }
+        }
+        return data
+      }
+    } catch (e) {
+      alert("**Not valid Nimbus JSON file!**\nerror: " + e)
+      return []
+    }
+  }
+
+  const parseStandardData = (input: any) => {
+    const filter = (node: any) => { return node.slot !== FAR_FUTURE_SLOT }
+    try {
+      let data: any = typeof input === 'string' ? JSON.parse(input) : input
+      if (!Array.isArray(data)) {
+        // single protoarray
+        return [{
+          timestamp: moment(data.time),
+          justifiedCheckpoint: data.justified_checkpoint,
+          finalizedCheckpoint: data.finalized_checkpoint,
+          forkchoiceNodes: data.fork_choice_nodes.filter(filter)
+        } as ForckchoiceDump]
+      } else {
+        // multiple protoarrays
+        for (let dump of data) {
+          dump.timestamp = moment(dump.time)
+          if (dump.protoArray) {
+            dump.forkchoiceNodes = dump.fork_choice_nodes.filter(filter)
+            dump.justifiedCheckpoint = dump.justified_checkpoint
+            dump.finalizedCheckpoint = dump.finalized_checkpoint
+            delete dump.justified_checkpoint
+            delete dump.finalized_checkpoint
             delete dump.protoArray
           }
         }
@@ -684,7 +758,7 @@ function App() {
         // multiple protoarrays
         for (let sample of data) {
           sample.timestamp = moment()
-          if(sample.forkchoice?.forkchoice_nodes) {
+          if (sample.forkchoice?.forkchoice_nodes) {
             sample.forkchoiceNodes = sample.forkchoice?.forkchoice_nodes
             delete sample.forkchoice.forkchoice_nodes
           }
@@ -710,6 +784,9 @@ function App() {
           break;
         case SourceType.nimbus:
           data = parseNimbusData(fileReader.result)
+          break;
+        case SourceType.standard:
+          data = parseStandardData(fileReader.result)
       }
       if (data !== undefined) setForckchoiceDumpArray(data)
 
@@ -870,238 +947,244 @@ function App() {
   }, [network, networkNodes, heads, roots, firstPOSNode])
 
   return (
-    <div className="App">
-      <Modal
-        isOpen={showSettings}
-        contentLabel="Settings"
-        ariaHideApp={false}
-      >
-        <button onClick={handleCloseSettings}>Close Settings</button>
-        <br></br>
-        <br></br>
-        <label>
-          Protoarray Endpoint:
-          <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} />
-        </label>
-        <br></br>
-        <br></br>
-        <label>
-          Refresh (ms):
-          <input type="number" style={{ width: '100px' }} value={pollPeriodEdit} onChange={handleSetPollingPeriod} />
-        </label>
-        <br></br>
-        <br></br>
-        <label>
-          Max history:
-          <input type="number" style={{ width: '100px' }} value={pollMaxHistoryEdit} onChange={handleSetPollMaxHistory} />
-        </label>
-        <br></br>
-        <br></br>
-        <label>
-          Source type
-          <Dropdown options={Object.values(SourceType)} onChange={handleSourceType} value={sourceTypeEdit} placeholder="Select Source Type" />
-        </label>
-        <br></br>
-        <br></br>
-        <label>
-          <input type="checkbox"
-            checked={drawMissingSlotNodesEdit}
-            onChange={handleSetDrawMissingSlotNodes}
-          />
-          Draw missing slot nodes (improves fork visualization)
-        </label>
-        <br></br>
-        <br></br>
-        <label>
-          <input type="checkbox"
-            checked={physicsEdit}
-            onChange={handleSetPhysics}
-          />
-          Physics
-        </label>
-      </Modal>
-      <div className="main">
-        <div className="header">
-          <button style={{ marginRight: 100 }} onClick={handleShowSettings}>Settings</button>
-          <button onClick={handleLoadTestData}>load test data</button>
-          <button onClick={handleImportData}>import</button>
-          <button onClick={handleExportData}>export</button>
-          <div style={{ marginLeft: 100, marginRight: 100 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
-          <button onClick={handleCanonicalHead}>Center on canonical head</button>
-          <button style={{ marginLeft: 100 }} onClick={handlePreviousHead}>&lt;</button>
-          Cycle heads
-          <button onClick={handleNextHead}>&gt;</button>
-          <div style={{ marginLeft: 100, width: 400, display: 'inline-flex' }}>
-            Node Size mode
-            <Dropdown controlClassName='myControlClassName' options={Object.values(NodeSizeMode)} onChange={handleNodeSizeMode} value={nodeSizeMode} placeholder="Select Note Size Mode" />
-          </div>
-
-          <input type='file' id='file' onChange={(e: any) => readFileOnUpload(e.target.files[0])} ref={inputFile} style={{ display: 'none' }} />
-        </div>
-        <div className="network">
-          <VisNetworkReactComponent
-            data={data}
-            options={{
-              height: '95%',
-              layout: {
-                randomSeed: 2,
-                hierarchical: {
-                  enabled: true,
-                  direction: 'LR',
-                  sortMethod: 'directed',
-                  ...(physics ? {} : { nodeSpacing: SLOT_WIDTH }),
-                  levelSeparation: SLOT_WIDTH
-                }
-              },
-              edges: { arrows: 'to' },
-              nodes: {
-                fixed: {
-                  x: true
-                },
-                shape: 'dot',
-                scaling: { min: 15, max: 50 }
-              },
-              physics: {
-                enabled: physics,
-
-                //hierarchicalRepulsion: {
-                //   nodeDistance: 200,
-                // },
-              },
-              interaction: {
-                navigationButtons: true,
-                keyboard: true,
-                dragNodes: true
-              },
-            }}
-            events={events}
-            getNodes={getNodes}
-            getNetwork={getNetwork}
-          />
-        </div>
-        <div className="footer">
-          <div style={{ width: '33%' }}>
+    <>
+      {globalError && <div><p>ASD: {globalError}</p>
+        <button onClick={() => { window.location.reload(); }}>reload</button></div>}
+      {!globalError &&
+        <div className="App">
+          <Modal
+            isOpen={showSettings}
+            contentLabel="Settings"
+            ariaHideApp={false}
+          >
+            <button onClick={handleCloseSettings}>Close Settings</button>
+            <br></br>
+            <br></br>
+            <label>
+              Protoarray Endpoint:
+              <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} />
+            </label>
+            <br></br>
+            <br></br>
+            <label>
+              Refresh (ms):
+              <input type="number" style={{ width: '100px' }} value={pollPeriodEdit} onChange={handleSetPollingPeriod} />
+            </label>
+            <br></br>
+            <br></br>
+            <label>
+              Max history:
+              <input type="number" style={{ width: '100px' }} value={pollMaxHistoryEdit} onChange={handleSetPollMaxHistory} />
+            </label>
+            <br></br>
+            <br></br>
+            <label>
+              Source type
+              <Dropdown options={Object.values(SourceType)} onChange={handleSourceType} value={sourceTypeEdit} placeholder="Select Source Type" />
+            </label>
+            <br></br>
+            <br></br>
             <label>
               <input type="checkbox"
-                defaultChecked={poll}
-                onChange={(event) => togglePoll(event.target.checked)}
+                checked={drawMissingSlotNodesEdit}
+                onChange={handleSetDrawMissingSlotNodes}
               />
-              Poll endpoint for data
+              Draw missing slot nodes (improves fork visualization)
             </label>
-          </div>
-          <div style={{ width: '33%' }}>
+            <br></br>
+            <br></br>
             <label>
               <input type="checkbox"
-                checked={followPoll}
-                onChange={(event) => setFollowPoll(event.target.checked)}
+                checked={physicsEdit}
+                onChange={handleSetPhysics}
               />
-              Follow Polling
+              Physics
             </label>
-          </div>
-          <div style={{ width: '33%' }}>
-            <label>
-              <input type="checkbox"
-                checked={followCanonicalHead}
-                onChange={(event) => setFollowCanonicalHead(event.target.checked)}
-              />
-              Always center on canonical head
-            </label>
-          </div>
-          <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[0].timestamp.toLocaleString() : 'N/A'}</div>
-          <div className="slider">
-
-            <Range renderTrack={({ props, children }) => (
-              <div
-                onMouseDown={props.onMouseDown}
-                onTouchStart={props.onTouchStart}
-                style={{
-                  ...props.style,
-                  height: "36px",
-                  display: "flex",
-                  width: "100%"
-                }}
-              >
-                <div
-                  ref={props.ref}
-                  style={{
-                    height: "5px",
-                    width: "100%",
-                    borderRadius: "4px",
-                    background: getTrackBackground({
-                      values: [currentForckchoiceDumpIdx],
-                      colors: ["#548BF4", "#ccc"],
-                      min: 0,
-                      max: forckchoiceDumpArray.length - 1
-                    }),
-                    alignSelf: "center"
-                  }}
-                >
-                  {children}
-                </div>
+          </Modal>
+          <div className="main">
+            <div className="header">
+              <button style={{ marginRight: 100 }} onClick={handleShowSettings}>Settings</button>
+              <button onClick={handleLoadTestData}>load test data</button>
+              <button onClick={handleImportData}>import</button>
+              <button onClick={handleExportData}>export</button>
+              <div style={{ marginLeft: 100, marginRight: 100 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
+              <button onClick={handleCanonicalHead}>Center on canonical head</button>
+              <button style={{ marginLeft: 100 }} onClick={handlePreviousHead}>&lt;</button>
+              Cycle heads
+              <button onClick={handleNextHead}>&gt;</button>
+              <div style={{ marginLeft: 100, width: 400, display: 'inline-flex' }}>
+                Node Size mode
+                <Dropdown controlClassName='myControlClassName' options={Object.values(NodeSizeMode)} onChange={handleNodeSizeMode} value={nodeSizeMode} placeholder="Select Note Size Mode" />
               </div>
-            )}
-              renderThumb={({ props, isDragged }) => (
-                <div
-                  {...props}
-                  style={{
-                    ...props.style,
-                    height: '42px',
-                    width: '21px',
-                    borderRadius: '4px',
-                    backgroundColor: '#FFF',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    boxShadow: '0px 2px 6px #AAA'
-                  }}
-                >
-                  {forckchoiceDumpArray.length > 0 &&
+
+              <input type='file' id='file' onChange={(e: any) => readFileOnUpload(e.target.files[0])} ref={inputFile} style={{ display: 'none' }} />
+            </div>
+            <div className="network">
+              <VisNetworkReactComponent
+                data={data}
+                options={{
+                  height: '95%',
+                  layout: {
+                    randomSeed: 2,
+                    hierarchical: {
+                      enabled: true,
+                      direction: 'LR',
+                      sortMethod: 'directed',
+                      ...(physics ? {} : { nodeSpacing: SLOT_WIDTH }),
+                      levelSeparation: SLOT_WIDTH
+                    }
+                  },
+                  edges: { arrows: 'to' },
+                  nodes: {
+                    fixed: {
+                      x: true
+                    },
+                    shape: 'dot',
+                    scaling: { min: 15, max: 50 }
+                  },
+                  physics: {
+                    enabled: physics,
+
+                    //hierarchicalRepulsion: {
+                    //   nodeDistance: 200,
+                    // },
+                  },
+                  interaction: {
+                    navigationButtons: true,
+                    keyboard: true,
+                    dragNodes: true
+                  },
+                }}
+                events={events}
+                getNodes={getNodes}
+                getNetwork={getNetwork}
+              />
+            </div>
+            <div className="footer">
+              <div style={{ width: '33%' }}>
+                <label>
+                  <input type="checkbox"
+                    defaultChecked={poll}
+                    onChange={(event) => togglePoll(event.target.checked)}
+                  />
+                  Poll endpoint for data
+                </label>
+              </div>
+              <div style={{ width: '33%' }}>
+                <label>
+                  <input type="checkbox"
+                    checked={followPoll}
+                    onChange={(event) => setFollowPoll(event.target.checked)}
+                  />
+                  Follow Polling
+                </label>
+              </div>
+              <div style={{ width: '33%' }}>
+                <label>
+                  <input type="checkbox"
+                    checked={followCanonicalHead}
+                    onChange={(event) => setFollowCanonicalHead(event.target.checked)}
+                  />
+                  Always center on canonical head
+                </label>
+              </div>
+              <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[0].timestamp.toLocaleString() : 'N/A'}</div>
+              <div className="slider">
+
+                <Range renderTrack={({ props, children }) => (
+                  <div
+                    onMouseDown={props.onMouseDown}
+                    onTouchStart={props.onTouchStart}
+                    style={{
+                      ...props.style,
+                      height: "36px",
+                      display: "flex",
+                      width: "100%"
+                    }}
+                  >
                     <div
+                      ref={props.ref}
                       style={{
-                        position: 'absolute',
-                        top: '48px',
-                        color: '#fff',
-                        fontWeight: 'bold',
-                        fontSize: '14px',
-                        fontFamily: 'Arial,Helvetica Neue,Helvetica,sans-serif',
-                        padding: '4px',
-                        borderRadius: '4px',
-                        backgroundColor: '#548BF4'
+                        height: "5px",
+                        width: "100%",
+                        borderRadius: "4px",
+                        background: getTrackBackground({
+                          values: [currentForckchoiceDumpIdx],
+                          colors: ["#548BF4", "#ccc"],
+                          min: 0,
+                          max: forckchoiceDumpArray.length - 1
+                        }),
+                        alignSelf: "center"
                       }}
                     >
-                      {forckchoiceDumpArray[currentForckchoiceDumpIdx]?.timestamp.local().format('HH:mm:ss')}
-                    </div>}
-                  <div
-                    style={{
-                      height: '16px',
-                      width: '5px',
-                      backgroundColor: isDragged ? '#548BF4' : '#CCC'
-                    }}
-                  />
-                </div>
-              )}
-              renderMark={({ props, index }) => (
-                <div
-                  {...props}
-                  style={{
-                    ...props.style,
-                    height: '16px',
-                    width: '5px',
-                    backgroundColor: index < currentForckchoiceDumpIdx ? '#548BF4' : '#ccc'
-                  }}
-                />
-              )}
-              min={0} max={Math.max(1, forckchoiceDumpArray.length - 1)}
-              step={1}
-              values={[currentForckchoiceDumpIdx]}
-              onChange={handleSlide} />
+                      {children}
+                    </div>
+                  </div>
+                )}
+                  renderThumb={({ props, isDragged }) => (
+                    <div
+                      {...props}
+                      style={{
+                        ...props.style,
+                        height: '42px',
+                        width: '21px',
+                        borderRadius: '4px',
+                        backgroundColor: '#FFF',
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        boxShadow: '0px 2px 6px #AAA'
+                      }}
+                    >
+                      {forckchoiceDumpArray.length > 0 &&
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: '48px',
+                            color: '#fff',
+                            fontWeight: 'bold',
+                            fontSize: '14px',
+                            fontFamily: 'Arial,Helvetica Neue,Helvetica,sans-serif',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            backgroundColor: '#548BF4'
+                          }}
+                        >
+                          {forckchoiceDumpArray[currentForckchoiceDumpIdx]?.timestamp.local().format('HH:mm:ss')}
+                        </div>}
+                      <div
+                        style={{
+                          height: '16px',
+                          width: '5px',
+                          backgroundColor: isDragged ? '#548BF4' : '#CCC'
+                        }}
+                      />
+                    </div>
+                  )}
+                  renderMark={({ props, index }) => (
+                    <div
+                      {...props}
+                      style={{
+                        ...props.style,
+                        height: '16px',
+                        width: '5px',
+                        backgroundColor: index < currentForckchoiceDumpIdx ? '#548BF4' : '#ccc'
+                      }}
+                    />
+                  )}
+                  min={0} max={Math.max(1, forckchoiceDumpArray.length - 1)}
+                  step={1}
+                  values={[currentForckchoiceDumpIdx]}
+                  onChange={handleSlide} />
 
+              </div>
+
+              <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[forckchoiceDumpArray.length - 1].timestamp.toLocaleString() : 'N/A'}</div>
+            </div>
           </div>
-
-          <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[forckchoiceDumpArray.length - 1].timestamp.toLocaleString() : 'N/A'}</div>
         </div>
-      </div>
-    </div>
+      }
+    </>
   )
 }
 

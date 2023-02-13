@@ -469,7 +469,7 @@ function App() {
       while (forchchoiceDumps.length >= pollMaxHistory) {
         forchchoiceDumps.shift()
       }
-      return [...forchchoiceDumps, { timestamp: moment(), forkchoiceNodes: fetchedForckchoiceDump }]
+      return [...forchchoiceDumps, { timestamp: moment(), forkchoiceNodes: fetchedForckchoiceDump.fork_choice_nodes }]
     }
     )
   }, [pollMaxHistory, fetchedForckchoiceDump, setForckchoiceDumpArray])
@@ -725,7 +725,8 @@ function App() {
           timestamp: moment(data.time),
           justifiedCheckpoint: data.justified_checkpoint,
           finalizedCheckpoint: data.finalized_checkpoint,
-          forkchoiceNodes: data.fork_choice_nodes.filter(filter)
+          forkchoiceNodes: data.fork_choice_nodes.filter(filter),
+          extraData: data.extra_data
         } as ForckchoiceDump]
       } else {
         // multiple protoarrays
@@ -735,6 +736,8 @@ function App() {
             dump.forkchoiceNodes = dump.fork_choice_nodes.filter(filter)
             dump.justifiedCheckpoint = dump.justified_checkpoint
             dump.finalizedCheckpoint = dump.finalized_checkpoint
+            dump.extraData = dump.extra_data
+            delete dump.extra_data
             delete dump.justified_checkpoint
             delete dump.finalized_checkpoint
             delete dump.protoArray

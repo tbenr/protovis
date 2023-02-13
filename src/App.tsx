@@ -19,8 +19,13 @@ import testData from './testData.json'
 const SLOT_WIDTH: number = 150
 const SLOT_HALF_WIDTH: number = SLOT_WIDTH / 2
 const SLOT_PER_EPOCH: number = 32
+const SECONDS_PER_SLOT: number = 12
 
 const FAR_FUTURE_SLOT = '18446744073709551615'
+
+const MAINNET_GENESIS_TIME: number = 1606824023
+const GOERLI_GENESIS_TIME: number = 1616508000
+const SEPOLIA_GENESIS_TIME: number = 1655733600
 
 const DEFAULT_POLLING_PERIOD: number = 6000
 const DEFAULT_ENDPOINT: string = 'http://localhost:5051/eth/v1/debug/fork_choice'
@@ -33,6 +38,13 @@ enum SourceType {
   prysm = 'Prysm (deprecated)',
   nimbus = 'Nimbus (deprecated)',
   standard = 'Standard'
+}
+
+enum NetworkType {
+  mainnet = 'Mainnet',
+  goerli = 'Goerli',
+  sepolia = 'Sepolia',
+  custom = 'Custom'
 }
 
 enum NodeSizeMode {
@@ -65,6 +77,7 @@ type ExistingNetworkNode = BaseVisNode & {
   cumulativeToHeadWeight: BigNumber
   childs: ExistingNetworkNode[]
   isMissingSlot: false
+  isLateBySlot: number
 }
 
 type MissingNetworkNode = BaseVisNode & {
@@ -82,6 +95,8 @@ type IdToNetworkNode = {
 
 const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.rootToHeadsCumulated
 const DEFAULT_SOURCE_TYPE: SourceType = SourceType.standard
+const DEFAULT_NETWORK_TYPE: NetworkType = NetworkType.mainnet
+const DEFAULT_GENESIS_TIME = MAINNET_GENESIS_TIME
 const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
 const DEFAULT_PHYSICS: boolean = true
 
@@ -141,6 +156,12 @@ function createMissingSlotNode(slot: number, parent: NetworkNode, child: Network
   }
 }
 
+function timestampToSlot(genesisTime: number, timestamp: number) {
+
+  return (timestamp - genesisTime) / SECONDS_PER_SLOT;
+
+}
+
 /**
  * 
  * Teku Specific
@@ -165,6 +186,7 @@ function forkchoiceNodeToNetworkNode_Teku(forkchoiceNode): NetworkNode {
     color: validationStatusToColor(forkchoiceNode.validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
+    isLateBySlot: 0,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parentRoot,
     isRoot: false,
@@ -193,6 +215,7 @@ function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
+    isLateBySlot: 0,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
@@ -222,6 +245,7 @@ function forkchoiceNodeToNetworkNode_Numbus(forkchoiceNode): NetworkNode | undef
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
+    isLateBySlot: 0,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
@@ -251,6 +275,7 @@ function forkchoiceNodeToNetworkNode_Standard(forkchoiceNode): NetworkNode | und
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
+    isLateBySlot: 0,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
@@ -295,10 +320,17 @@ function calculateCumulativeToHeadWeights(root: ExistingNetworkNode): ExistingNe
   }
 }
 
-function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, nodeSizeMode: NodeSizeMode, drawMissingSlotNodes: boolean) {
+function forkchoiceNodesToNetworkData(
+  genesisTime: number,
+  forckchoiceNodes,
+  sourceType: SourceType,
+  nodeSizeMode: NodeSizeMode,
+  drawMissingSlotNodes: boolean) {
+
   let nodes: IdToNetworkNode = {}
   let edges: any = []
   let heads: ExistingNetworkNode[] = []
+  let lateNodes: ExistingNetworkNode[] = []
   let headsIds: any = []
   let roots: any = {}
   let firstPOSNode: any
@@ -379,6 +411,16 @@ function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, 
     node.childs.forEach(child => {
       node.weight = node.weight.minus(child.cumulativeToRootWeight);
     })
+
+    // calculate late nodes
+    let timestamp = node.forkchoiceNode?.extra_data?.timestamp as number
+    if (timestamp) {
+      let receivedAtSlot = timestampToSlot(genesisTime,timestamp) - node.forkchoiceNode.slot
+      if(receivedAtSlot >= 1) {
+        node.isLateBySlot = receivedAtSlot;
+        lateNodes = [...lateNodes, node]
+      }
+    }
   })
 
   // calculate cumulative weights to head
@@ -405,6 +447,7 @@ function forkchoiceNodesToNetworkData(forckchoiceNodes, sourceType: SourceType, 
   return {
     roots: roots,
     heads: heads.sort((a, b) => b.cumulativeToHeadWeight.comparedTo(a.cumulativeToHeadWeight)),
+    lateNodes: lateNodes,
     networkData: {
       nodes: Object.values(nodes),
       edges: edges
@@ -423,6 +466,7 @@ function App() {
   const [currentForckchoiceDumpIdx, setCurrentForckchoiceDumpIdx] = useState<number>(0)
   const [data, setData] = useState(defaultdata)
   const [heads, setHeads] = useState<NetworkNode[]>([])
+  const [lateNodes, setLateNodes] = useState<ExistingNetworkNode[]>([])
   const [roots, setRoots] = useState<any[]>([])
   const [firstPOSNode, setFirstPOSNode] = useState<any | undefined>()
   const [headIdx, setheadIdx] = useState<number>(0)
@@ -443,6 +487,8 @@ function App() {
   const [sourceType, setSourceType] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
   const [drawMissingSlotNodes, setDrawMissingSlotNodes] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
   const [physics, setPhysics] = useState<boolean>(DEFAULT_PHYSICS)
+  const [networkType, setNetworkType] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
+  const [genesisTime, setGenesisTime] = useState<number>(DEFAULT_GENESIS_TIME)
 
   // settings edit
   const [protoArrayEndpointEdit, setProtoArrayEndpointEdit] = useState<string>(DEFAULT_ENDPOINT)
@@ -451,6 +497,8 @@ function App() {
   const [sourceTypeEdit, setSourceTypeEdit] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
   const [drawMissingSlotNodesEdit, setDrawMissingSlotNodesEdit] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
   const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_PHYSICS)
+  const [networkTypeEdit, setNetworkTypeEdit] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
+  const [genesisTimeEdit, setGenesisTimeEdit] = useState<number>(DEFAULT_GENESIS_TIME)
 
   const inputFile = useRef<any>(null)
 
@@ -497,15 +545,27 @@ function App() {
     try {
       if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
 
-      const { firstPOSNode, roots, heads, networkData } = forkchoiceNodesToNetworkData(forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
+      const { firstPOSNode, roots, heads, lateNodes, networkData } = forkchoiceNodesToNetworkData(genesisTime, forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
       setHeads(heads)
+      setLateNodes(lateNodes)
       setRoots(roots)
       setFirstPOSNode(firstPOSNode)
       setData(networkData as any)
     } catch (e) {
       setGlobalError("error loading data - verify source type in settings (" + e + ")");
     }
-  }, [currentForckchoiceDumpIdx, forckchoiceDumpArray, sourceType, nodeSizeMode, drawMissingSlotNodes, setData, setHeads, setRoots, setFirstPOSNode, setGlobalError])
+  }, [genesisTime,
+    currentForckchoiceDumpIdx,
+    forckchoiceDumpArray,
+    sourceType,
+    nodeSizeMode,
+    drawMissingSlotNodes,
+    setData,
+    setHeads,
+    setLateNodes,
+     setRoots, 
+     setFirstPOSNode, 
+     setGlobalError])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -571,6 +631,8 @@ function App() {
     setSourceType(sourceTypeEdit)
     setDrawMissingSlotNodes(drawMissingSlotNodesEdit)
     setPhysics(physicsEdit)
+    setNetworkType(networkTypeEdit)
+    setGenesisTime(genesisTimeEdit)
 
     if (poll) {
       clearInterval(pollTimer)
@@ -588,12 +650,16 @@ function App() {
     pollMaxHistoryEdit,
     drawMissingSlotNodesEdit,
     physicsEdit,
+    networkTypeEdit,
+    genesisTimeEdit,
     setProtoArrayEndpoint,
     setPollPeriod,
     setPollMaxHistory,
     setSourceType,
     setPhysics,
-    setDrawMissingSlotNodes])
+    setDrawMissingSlotNodes,
+    setNetworkType,
+    setGenesisTime])
 
   const handleUpdateEndpoint = useCallback((event) => {
     setProtoArrayEndpointEdit(event.target.value)
@@ -618,6 +684,27 @@ function App() {
   const handleSetPhysics = useCallback((event) => {
     setPhysicsEdit(event.target.checked)
   }, [setPhysicsEdit])
+
+  const handleSetGenesisTime = useCallback((event) => {
+    setGenesisTimeEdit(event.target.value)
+  }, [setGenesisTimeEdit])
+
+  const handleSetNetworkType = useCallback((type: Option) => {
+    let network: NetworkType = type.value as NetworkType
+
+    setNetworkTypeEdit(network)
+    switch (network) {
+      case NetworkType.mainnet:
+        setGenesisTimeEdit(MAINNET_GENESIS_TIME)
+        break;
+      case NetworkType.goerli:
+        setGenesisTimeEdit(GOERLI_GENESIS_TIME)
+        break;
+      case NetworkType.sepolia:
+        setGenesisTimeEdit(SEPOLIA_GENESIS_TIME)
+        break;
+    }
+  }, [setNetworkTypeEdit, setGenesisTimeEdit])
 
   /*** head navigation callbacks **/
 
@@ -923,6 +1010,24 @@ function App() {
           let x = posNodePosition.x - ctx.measureText(posLabel).width / 2
           ctx.fillText(posLabel, x, posNodePosition.y - 100)
         }
+
+        ctx.lineJoin = "round"
+        ctx.lineCap = "round"
+        ctx.lineWidth = 2
+        ctx.strokeStyle = "#ebe244";
+
+        lateNodes.forEach(node => {
+          let nodePosition = network.getPosition(node.id)
+          ctx.beginPath()
+          ctx.moveTo(nodePosition.x, nodePosition.y)
+          let newy = nodePosition.y + 100;
+          let newx = nodePosition.x + (node.isLateBySlot * SLOT_WIDTH);
+          ctx.lineTo(nodePosition.x, newy)
+          ctx.lineTo(newx, nodePosition.y + 100)
+          ctx.moveTo(nodePosition.x + (node.isLateBySlot * SLOT_WIDTH), newy - 10)
+          ctx.lineTo(nodePosition.x + (node.isLateBySlot * SLOT_WIDTH), newy + 10)
+          ctx.stroke()
+        });
       },
 
       afterDrawing: function (ctx) {
@@ -947,7 +1052,7 @@ function App() {
         })
       },
     }
-  }, [network, networkNodes, heads, roots, firstPOSNode])
+  }, [network, networkNodes, heads, lateNodes, roots, firstPOSNode])
 
   return (
     <>
@@ -1002,6 +1107,19 @@ function App() {
                 onChange={handleSetPhysics}
               />
               Physics
+            </label>
+            <br></br>
+            <br></br>
+            <label>
+              Network
+              <Dropdown options={Object.values(NetworkType)} onChange={handleSetNetworkType} value={networkTypeEdit} placeholder="Select Network" />
+            </label>
+            <br></br>
+            <br></br>
+            <label>
+              Genesis Time
+              <input disabled={networkTypeEdit !== NetworkType.custom} type="number" style={{ width: '100px' }} value={genesisTimeEdit} onChange={handleSetGenesisTime} />
+              {`${moment(genesisTimeEdit * 1000).local()}`}
             </label>
           </Modal>
           <div className="main">

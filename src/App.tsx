@@ -77,7 +77,7 @@ type ExistingNetworkNode = BaseVisNode & {
   cumulativeToHeadWeight: BigNumber
   childs: ExistingNetworkNode[]
   isMissingSlot: false
-  isLateBySlot: number
+  isLate: boolean
 }
 
 type MissingNetworkNode = BaseVisNode & {
@@ -157,9 +157,11 @@ function createMissingSlotNode(slot: number, parent: NetworkNode, child: Network
 }
 
 function timestampToSlot(genesisTime: number, timestamp: number) {
+  return (+timestamp - genesisTime) / SECONDS_PER_SLOT;
+}
 
-  return (timestamp - genesisTime) / SECONDS_PER_SLOT;
-
+function slotToTimestamp(genesisTime: number, slot: number) {
+  return +genesisTime + (slot * SECONDS_PER_SLOT)
 }
 
 /**
@@ -186,7 +188,7 @@ function forkchoiceNodeToNetworkNode_Teku(forkchoiceNode): NetworkNode {
     color: validationStatusToColor(forkchoiceNode.validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
-    isLateBySlot: 0,
+    isLate: false,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parentRoot,
     isRoot: false,
@@ -215,7 +217,7 @@ function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
-    isLateBySlot: 0,
+    isLate: false,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
@@ -245,7 +247,7 @@ function forkchoiceNodeToNetworkNode_Numbus(forkchoiceNode): NetworkNode | undef
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
-    isLateBySlot: 0,
+    isLate: false,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
@@ -275,7 +277,7 @@ function forkchoiceNodeToNetworkNode_Standard(forkchoiceNode): NetworkNode | und
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
     isMerge: isMerge,
-    isLateBySlot: 0,
+    isLate: false,
     isFirstPOS: false,
     parentRoot: forkchoiceNode.parent_root,
     isRoot: false,
@@ -417,7 +419,7 @@ function forkchoiceNodesToNetworkData(
     if (timestamp) {
       let receivedAtSlot = timestampToSlot(genesisTime,timestamp) - node.forkchoiceNode.slot
       if(receivedAtSlot >= 1) {
-        node.isLateBySlot = receivedAtSlot;
+        node.isLate = true;
         lateNodes = [...lateNodes, node]
       }
     }
@@ -1011,6 +1013,7 @@ function App() {
           ctx.fillText(posLabel, x, posNodePosition.y - 100)
         }
 
+        // late nodes
         ctx.lineJoin = "round"
         ctx.lineCap = "round"
         ctx.lineWidth = 2
@@ -1020,13 +1023,27 @@ function App() {
           let nodePosition = network.getPosition(node.id)
           ctx.beginPath()
           ctx.moveTo(nodePosition.x, nodePosition.y)
-          let newy = nodePosition.y + 100;
-          let newx = nodePosition.x + (node.isLateBySlot * SLOT_WIDTH);
+          let actualTimestamp = node.forkchoiceNode.extra_data.timestamp
+          let lateBySlot = timestampToSlot(genesisTime, actualTimestamp) - node.forkchoiceNode.slot
+          let expectedTimestamp = slotToTimestamp(genesisTime, node.forkchoiceNode.slot)
+          let newy = nodePosition.y + 100
           ctx.lineTo(nodePosition.x, newy)
-          ctx.lineTo(newx, nodePosition.y + 100)
-          ctx.moveTo(nodePosition.x + (node.isLateBySlot * SLOT_WIDTH), newy - 10)
-          ctx.lineTo(nodePosition.x + (node.isLateBySlot * SLOT_WIDTH), newy + 10)
+          let newx = nodePosition.x + (lateBySlot * SLOT_WIDTH) - SLOT_HALF_WIDTH
+          ctx.lineTo(newx, newy)
+          ctx.moveTo(newx, newy - 10)
+          ctx.lineTo(newx, newy + 10)
           ctx.stroke()
+          ctx.strokeStyle = "#cfa044";
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(newx, newy - 8)
+          ctx.lineTo(newx, newy + 8)
+          ctx.stroke()
+
+          ctx.fillStyle = "#cfa044"
+          let lateDuration = moment.duration(actualTimestamp - expectedTimestamp, 'seconds')
+          let label = `${lateDuration.minutes()}m:${lateDuration.seconds()}s`
+          ctx.fillText(label, newx+3, newy + 5)
         });
       },
 
@@ -1052,7 +1069,7 @@ function App() {
         })
       },
     }
-  }, [network, networkNodes, heads, lateNodes, roots, firstPOSNode])
+  }, [network, genesisTime,networkNodes, heads, lateNodes, roots, firstPOSNode])
 
   return (
     <>

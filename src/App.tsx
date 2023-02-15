@@ -1014,12 +1014,13 @@ function App() {
         }
 
         // late nodes
-        ctx.lineJoin = "round"
-        ctx.lineCap = "round"
-        ctx.lineWidth = 2
-        ctx.strokeStyle = "#ebe244";
-
+        
         lateNodes.forEach(node => {
+          ctx.lineJoin = "round"
+          ctx.lineCap = "round"
+          ctx.lineWidth = 2
+          ctx.strokeStyle = "#ebe244";
+
           let nodePosition = network.getPosition(node.id)
           ctx.beginPath()
           ctx.moveTo(nodePosition.x, nodePosition.y)

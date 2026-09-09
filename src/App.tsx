@@ -448,7 +448,7 @@ function forkchoiceNodesToNetworkData(
 
   return {
     roots: roots,
-    heads: heads.sort((a, b) => b.cumulativeToHeadWeight.comparedTo(a.cumulativeToHeadWeight)),
+    heads: heads.sort((a, b) => b.cumulativeToHeadWeight.comparedTo(a.cumulativeToHeadWeight) ?? 0),
     lateNodes: lateNodes,
     networkData: {
       nodes: Object.values(nodes),

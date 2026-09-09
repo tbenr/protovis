@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+      // vis-network triggers a benign "ResizeObserver loop completed" error during layout.
+      // Swallow it before the dev-server overlay's listener (registered later, in the bundle) can see it.
+      window.addEventListener('error', function (event) {
+        if (event.message === 'ResizeObserver loop completed with undelivered notifications.') {
+          event.stopImmediatePropagation();
+        }
+      }, true);
+    </script>
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />

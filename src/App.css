@@ -70,3 +70,36 @@
 .error-panel-message {
   word-break: break-word;
 }
+
+.ptc-legend {
+  position: fixed;
+  z-index: 900;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: #222;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  text-align: left;
+  line-height: 1.6;
+}
+
+.ptc-legend-title {
+  font-weight: bold;
+  margin: -6px -10px 2px -10px;
+  padding: 4px 10px 2px 10px;
+  border-bottom: 1px solid #ddd;
+  cursor: move;
+  touch-action: none;
+}
+
+.ptc-legend-ring {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border-style: solid;
+  vertical-align: middle;
+  margin-right: 6px;
+}

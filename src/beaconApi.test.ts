@@ -42,6 +42,14 @@ describe('fetchNodeParams', () => {
     })
   })
 
+  it('reads the PTC size when the spec has it', async () => {
+    const fetch = mockFetch({
+      'http://node:5051/eth/v1/beacon/genesis': { data: { genesis_time: '1700000000' } },
+      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '6', PTC_SIZE: '16' } },
+    })
+    await expect(fetchNodeParams('http://node:5051', fetch)).resolves.toMatchObject({ ptcSize: 16 })
+  })
+
   it('throws a descriptive error when a request fails', async () => {
     const fetch = mockFetch({
       'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '12' } },

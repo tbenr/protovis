@@ -1,0 +1,416 @@
+{
+  "justified_checkpoint": {
+    "epoch": "12",
+    "root": "0x3130305f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f"
+  },
+  "finalized_checkpoint": {
+    "epoch": "11",
+    "root": "0x3130305f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f"
+  },
+  "fork_choice_nodes": [
+    {
+      "payload_status": "full",
+      "slot": "100",
+      "block_root": "0x3130305f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "weight": "1960000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x703130305f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825223",
+        "synthetic_block": "100"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "101",
+      "block_root": "0x3130315f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x3130305f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "1860000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x703130315f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825235",
+        "synthetic_block": "101"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "102",
+      "block_root": "0x3130325f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x3130315f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "1760000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x703130325f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825247",
+        "synthetic_block": "102"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "103",
+      "block_root": "0x3130335f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x3130325f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "1640000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x703130335f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825259",
+        "synthetic_block": "103"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "104",
+      "block_root": "0x415f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x3130335f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "1540000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x703130335f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "512",
+      "payload_availability_yes_count": "512",
+      "payload_data_availability_yes_count": "512",
+      "extra_data": {
+        "timestamp": "1606825271",
+        "synthetic_block": "A"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "104",
+      "block_root": "0x415f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x3130335f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "0",
+      "validity": "valid",
+      "execution_block_hash": "0x703130335f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "512",
+      "payload_availability_yes_count": "512",
+      "payload_data_availability_yes_count": "512",
+      "extra_data": {
+        "timestamp": "1606825271",
+        "synthetic_block": "A"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "104",
+      "block_root": "0x415f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x3130335f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "1540000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70415f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "512",
+      "payload_availability_yes_count": "512",
+      "payload_data_availability_yes_count": "512",
+      "extra_data": {
+        "timestamp": "1606825271",
+        "synthetic_block": "A"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "105",
+      "block_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x415f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "1240000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70415f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "400",
+      "payload_availability_yes_count": "300",
+      "payload_data_availability_yes_count": "280",
+      "extra_data": {
+        "timestamp": "1606825283",
+        "synthetic_block": "B"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "105",
+      "block_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x415f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "300000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70415f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "400",
+      "payload_availability_yes_count": "300",
+      "payload_data_availability_yes_count": "280",
+      "extra_data": {
+        "timestamp": "1606825283",
+        "synthetic_block": "B"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "105",
+      "block_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x415f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "940000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70425f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "400",
+      "payload_availability_yes_count": "300",
+      "payload_data_availability_yes_count": "280",
+      "extra_data": {
+        "timestamp": "1606825283",
+        "synthetic_block": "B"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "106",
+      "block_root": "0x435f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "300000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70415f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "500",
+      "payload_availability_yes_count": "480",
+      "payload_data_availability_yes_count": "470",
+      "extra_data": {
+        "timestamp": "1606825295",
+        "synthetic_block": "C"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "106",
+      "block_root": "0x435f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "0",
+      "validity": "valid",
+      "execution_block_hash": "0x70415f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "500",
+      "payload_availability_yes_count": "480",
+      "payload_data_availability_yes_count": "470",
+      "extra_data": {
+        "timestamp": "1606825295",
+        "synthetic_block": "C"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "106",
+      "block_root": "0x435f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "300000000000",
+      "validity": "invalid",
+      "execution_block_hash": "0x70435f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "500",
+      "payload_availability_yes_count": "480",
+      "payload_data_availability_yes_count": "470",
+      "extra_data": {
+        "timestamp": "1606825295",
+        "synthetic_block": "C"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "106",
+      "block_root": "0x445f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "840000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70425f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "512",
+      "payload_availability_yes_count": "512",
+      "payload_data_availability_yes_count": "512",
+      "extra_data": {
+        "timestamp": "1606825295",
+        "synthetic_block": "D"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "106",
+      "block_root": "0x445f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "0",
+      "validity": "valid",
+      "execution_block_hash": "0x70425f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "512",
+      "payload_availability_yes_count": "512",
+      "payload_data_availability_yes_count": "512",
+      "extra_data": {
+        "timestamp": "1606825295",
+        "synthetic_block": "D"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "106",
+      "block_root": "0x445f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x425f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "840000000000",
+      "validity": "optimistic",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "512",
+      "payload_availability_yes_count": "512",
+      "payload_data_availability_yes_count": "512",
+      "extra_data": {
+        "timestamp": "1606825295",
+        "synthetic_block": "D"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "107",
+      "block_root": "0x455f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x445f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "440000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825307",
+        "synthetic_block": "E"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "107",
+      "block_root": "0x455f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x445f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "440000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825307",
+        "synthetic_block": "E"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "108",
+      "block_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x455f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "240000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "350",
+      "payload_availability_yes_count": "40",
+      "payload_data_availability_yes_count": "35",
+      "extra_data": {
+        "timestamp": "1606825331",
+        "synthetic_block": "F"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "108",
+      "block_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x455f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "150000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "350",
+      "payload_availability_yes_count": "40",
+      "payload_data_availability_yes_count": "35",
+      "extra_data": {
+        "timestamp": "1606825331",
+        "synthetic_block": "F"
+      }
+    },
+    {
+      "payload_status": "full",
+      "slot": "108",
+      "block_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x455f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "90000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70465f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "350",
+      "payload_availability_yes_count": "40",
+      "payload_data_availability_yes_count": "35",
+      "extra_data": {
+        "timestamp": "1606825331",
+        "synthetic_block": "F"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "110",
+      "block_root": "0x475f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "100000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825343",
+        "synthetic_block": "G"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "110",
+      "block_root": "0x475f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "0",
+      "validity": "valid",
+      "execution_block_hash": "0x70445f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825343",
+        "synthetic_block": "G"
+      }
+    },
+    {
+      "payload_status": "pending",
+      "slot": "111",
+      "block_root": "0x485f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "60000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70465f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825355",
+        "synthetic_block": "H"
+      }
+    },
+    {
+      "payload_status": "empty",
+      "slot": "111",
+      "block_root": "0x485f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "parent_root": "0x465f5f5f5f726f6f745f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "weight": "60000000000",
+      "validity": "valid",
+      "execution_block_hash": "0x70465f5f5f7061796c6f61645f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f5f",
+      "payload_attester_count": "0",
+      "payload_availability_yes_count": "0",
+      "payload_data_availability_yes_count": "0",
+      "extra_data": {
+        "timestamp": "1606825355",
+        "synthetic_block": "H"
+      }
+    }
+  ],
+  "extra_data": {
+    "synthetic": true,
+    "generator": "scripts/genGloasTestData.js"
+  }
+}

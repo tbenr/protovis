@@ -83,6 +83,25 @@ With Network set to **Auto** (the default) the genesis time and slot duration ar
 the node (`/eth/v1/beacon/genesis` and `/eth/v1/config/spec`) whenever the settings are
 applied or polling is started.
 
+Fork choice is read from `/eth/v2/debug/fork_choice` when the node supports it
+([beacon-APIs#615](https://github.com/ethereum/beacon-APIs/pull/615), Gloas / EIP-7732 aware),
+falling back to `/eth/v1/debug/fork_choice` otherwise. With v2, each Gloas block is shown as its
+PENDING block node plus its EMPTY (`∅`, dashed) and FULL (`🦫` + execution block hash + PTC votes)
+payload nodes; child blocks hang from the payload node they were built on. Childless EMPTY nodes
+carrying less than a configurable share of their block's weight (default 1%) are hidden
+(Settings → "Hide childless EMPTY payload nodes"); a block whose payload was never revealed
+always keeps its EMPTY node.
+
+FULL payload nodes carry rings showing the PTC (Payload Timeliness Committee) vote as a share of
+the whole committee (`PTC_SIZE` from the node's spec, 512 on mainnet by default): outer ring green =
+voted payload present, orange = voted payload absent, grey = no vote received; inner blue ring =
+voted blob data available. A draggable legend appears whenever payload nodes are shown.
+
+"load Gloas test data" loads a synthetic v2 dump (`src/testDataGloas.json`, Standard source type)
+with a pre-Gloas boundary, a fork on an EMPTY payload, an unrevealed payload, an EMPTY node that
+is a head, a late block, a skipped slot and mixed PTC votes. Regenerate it after editing the scenario in
+`scripts/genGloasTestData.js` with `yarn gen:gloas-testdata`.
+
 The browser talks to the node directly, so the node must allow cross-origin requests
 (e.g. Teku: `--rest-api-cors-origins="http://localhost:3000"`). Alternatively run the
 `server/` app: it serves the production build and proxies `/eth/*` to the node given in

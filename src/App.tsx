@@ -15,11 +15,18 @@ import 'highlight.js/styles/default.css'
 import 'vis-network/styles/vis-network.min.css'
 
 import testData from './testData.json'
-import { fetchNodeParams, forkChoiceUrl, normalizeBaseUrl } from './beaconApi'
+import testDataGloas from './testDataGloas.json'
+import { fetchNodeParams, normalizeBaseUrl } from './beaconApi'
+import { fetchForkChoice, forkChoiceNodeKey, resolveParentKey, isV2Node, ptcVoteFractions, ForkChoiceApiVersion, PayloadStatus } from './forkChoiceApi'
+import { makePtcNodeRenderer, makeEmptyNodeRenderer } from './ptcNode'
+import PtcLegend from './PtcLegend'
 import ErrorPanel, { ActiveErrors } from './ErrorPanel'
 
 const SLOT_WIDTH: number = 150
-const SLOT_HALF_WIDTH: number = SLOT_WIDTH / 2
+// Layout levels are taken relative to an anchor slot so canvas coordinates stay small: mainnet
+// slots (~15M) times the level separation exceed the ~16M precision limit of canvas floats and
+// render as jagged shapes. The anchor is a coarse multiple so it rarely moves between polls.
+const LEVEL_ANCHOR_GRANULARITY: number = 2048
 const SLOT_PER_EPOCH: number = 32
 const DEFAULT_SECONDS_PER_SLOT: number = 12
 
@@ -62,16 +69,23 @@ type BaseVisNode = {
   id: string
   title: HTMLDivElement
   label: string
+  // hierarchical layout level: slot * 2 for block nodes, slot * 2 + 1 for Gloas payload (empty/full) nodes
   level: number
+  slot: number
   value: number
   color: string
+  shapeProperties?: { borderDashes?: boolean | number[] }
+  shape?: string
+  ctxRenderer?: any
 }
 
 type ExistingNetworkNode = BaseVisNode & {
   forkchoiceNode: any
   isMerge: boolean
   isFirstPOS: boolean
+  // graph key of the parent node (block root, or block root + payload status for Gloas v2 nodes)
   parentRoot: string
+  payloadStatus?: PayloadStatus
   isRoot: boolean
   isHead: boolean
   weight: BigNumber
@@ -101,6 +115,10 @@ const DEFAULT_SOURCE_TYPE: SourceType = SourceType.standard
 const DEFAULT_NETWORK_TYPE: NetworkType = NetworkType.auto
 const DEFAULT_GENESIS_TIME = MAINNET_GENESIS_TIME
 const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
+const DEFAULT_HIDE_EMPTY_NODES: boolean = true
+// childless EMPTY nodes below this share (%) of their block's weight are hidden
+const DEFAULT_HIDE_EMPTY_THRESHOLD: number = 1
+const DEFAULT_PTC_SIZE: number = 512 // mainnet Payload Timeliness Committee size
 const DEFAULT_PHYSICS: boolean = true
 
 type ForckchoiceDump = {
@@ -143,12 +161,21 @@ function validationStatusToColor(validationStatus: ValidationStatus, isHead: boo
   }
 }
 
-function createMissingSlotNode(slot: number, parent: NetworkNode, child: NetworkNode) {
+function isRealSlot(slot: number) {
+  return slot < Number(FAR_FUTURE_SLOT)
+}
+
+function slotToLevel(slot: number, anchorSlot: number, payloadNode: boolean = false) {
+  return (slot - anchorSlot) * 2 + (payloadNode ? 1 : 0)
+}
+
+function createMissingSlotNode(slot: number, anchorSlot: number, parent: NetworkNode, child: NetworkNode) {
   return {
     id: slot + '_' + child.id,
     title: htmlTitle('missing'),
     label: '',
-    level: slot,
+    level: slotToLevel(slot, anchorSlot),
+    slot: slot,
     shape: 'diamond',
     scaling: { min: 5, max: 5 },
     choosen: false,
@@ -186,7 +213,8 @@ function forkchoiceNodeToNetworkNode_Teku(forkchoiceNode): NetworkNode {
     id: forkchoiceNode.blockRoot,
     title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
     label: label,
-    level: parseInt(forkchoiceNode.slot),
+    level: parseInt(forkchoiceNode.slot) * 2,
+    slot: parseInt(forkchoiceNode.slot),
     value: 0,
     color: validationStatusToColor(forkchoiceNode.validationStatus, false),
     forkchoiceNode: forkchoiceNode,
@@ -215,7 +243,8 @@ function forkchoiceNodeToNetworkNode_Prysm(forkchoiceNode): NetworkNode {
     id: forkchoiceNode.root,
     title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
     label: label,
-    level: parseInt(forkchoiceNode.slot),
+    level: parseInt(forkchoiceNode.slot) * 2,
+    slot: parseInt(forkchoiceNode.slot),
     value: 0,
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
@@ -245,7 +274,8 @@ function forkchoiceNodeToNetworkNode_Numbus(forkchoiceNode): NetworkNode | undef
     id: forkchoiceNode.block_root,
     title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
     label: label,
-    level: parseInt(forkchoiceNode.slot),
+    level: parseInt(forkchoiceNode.slot) * 2,
+    slot: parseInt(forkchoiceNode.slot),
     value: 0,
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
@@ -264,18 +294,38 @@ function forkchoiceNodeToNetworkNode_Numbus(forkchoiceNode): NetworkNode | undef
   }
 }
 
+function applyPayloadNodeStyle(node: ExistingNetworkNode, anchorSlot: number, ptcSize: number) {
+  const forkchoiceNode = node.forkchoiceNode
+  node.level = slotToLevel(node.slot, anchorSlot, true)
+  if (node.payloadStatus === 'full') {
+    node.label = '🦫 ' + forkchoiceNode.execution_block_hash.substring(0, 8)
+    node.shape = 'custom'
+    node.ctxRenderer = makePtcNodeRenderer(ptcVoteFractions(forkchoiceNode, ptcSize))
+  } else {
+    node.label = ''
+    node.shape = 'custom'
+    node.ctxRenderer = makeEmptyNodeRenderer()
+  }
+}
+
 function forkchoiceNodeToNetworkNode_Standard(forkchoiceNode): NetworkNode | undefined {
   if (forkchoiceNode.slot === FAR_FUTURE_SLOT) return
   let isMerge = forkchoiceNode.execution_block_hash !== '0x0000000000000000000000000000000000000000000000000000000000000000'
-  let label = isMerge ? '🐼 ' : ''
+  const payloadStatus: PayloadStatus | undefined = isV2Node(forkchoiceNode) ? forkchoiceNode.payload_status : undefined
+  // Panda marks post-merge blocks that carry their own payload: v1 nodes and lone pre-Gloas "full"
+  // nodes. Gloas PENDING/EMPTY nodes get none; Gloas FULL nodes are restyled to the beaver by
+  // applyPayloadNodeStyle once their PENDING sibling is known.
+  const carriesPayload = isMerge && payloadStatus !== 'pending' && payloadStatus !== 'empty'
+  let label = (carriesPayload ? '🐼 ' : '') + forkchoiceNode.block_root.substring(0, 8)
   let cumulativeToRootWeight = BigNumber(forkchoiceNode.weight)
-  label += forkchoiceNode.block_root.substring(0, 8)
   let validationStatus: ValidationStatus = forkchoiceNode.validity.toUpperCase()
   return {
-    id: forkchoiceNode.block_root,
+    id: forkChoiceNodeKey(forkchoiceNode),
+    payloadStatus: payloadStatus,
     title: htmlTitle('<i>single-click to copy blockRoot, double-click to copy all</i><pre><code id="jsonNodeInfo" class="language-json">' + JSON.stringify(forkchoiceNode, null, ' ') + '</code></pre>'),
     label: label,
-    level: parseInt(forkchoiceNode.slot),
+    level: parseInt(forkchoiceNode.slot) * 2,
+    slot: parseInt(forkchoiceNode.slot),
     value: 0,
     color: validationStatusToColor(validationStatus, false),
     forkchoiceNode: forkchoiceNode,
@@ -331,7 +381,10 @@ function forkchoiceNodesToNetworkData(
   forckchoiceNodes,
   sourceType: SourceType,
   nodeSizeMode: NodeSizeMode,
-  drawMissingSlotNodes: boolean) {
+  drawMissingSlotNodes: boolean,
+  hideEmptyNodes: boolean,
+  hideEmptyThresholdPercent: number,
+  ptcSize: number) {
 
   let nodes: IdToNetworkNode = {}
   let edges: any = []
@@ -362,11 +415,29 @@ function forkchoiceNodesToNetworkData(
 
   }
 
+  // Gloas v2: several fork choice nodes may share a block root (pending/empty/full)
+  const variantsByRoot: { [root: string]: any[] } = {}
+  forckchoiceNodes.forEach(forckchoiceNode => {
+    const root = forckchoiceNode[rootBlockAttr]
+    variantsByRoot[root] = [...(variantsByRoot[root] ?? []), forckchoiceNode]
+  })
+  const variantsOfRoot = (root: string) => variantsByRoot[root] ?? []
+
+  const slots = forckchoiceNodes.map(n => parseInt(n.slot)).filter(slot => Number.isFinite(slot) && isRealSlot(slot))
+  const anchorSlot = slots.length > 0 ? Math.floor(Math.min(...slots) / LEVEL_ANCHOR_GRANULARITY) * LEVEL_ANCHOR_GRANULARITY : 0
+
   forckchoiceNodes.forEach(forckchoiceNode => {
     let node = mapper(forckchoiceNode)
     if (node === undefined) return
-    nodes[forckchoiceNode[rootBlockAttr]] = mapper(forckchoiceNode)
-    headsIds.push(forckchoiceNode[rootBlockAttr])
+    node.level = slotToLevel(node.slot, anchorSlot)
+    if (sourceType === SourceType.standard) {
+      node.parentRoot = resolveParentKey(forckchoiceNode, variantsOfRoot)
+      if ((node.payloadStatus === 'empty' || node.payloadStatus === 'full') && node.parentRoot === `${forckchoiceNode.block_root}:pending`) {
+        applyPayloadNodeStyle(node as ExistingNetworkNode, anchorSlot, ptcSize)
+      }
+    }
+    nodes[node.id] = node
+    headsIds.push(node.id)
   })
 
   // first pass: set additional flags and find roots and define edges
@@ -390,8 +461,8 @@ function forkchoiceNodesToNetworkData(
     if (drawMissingSlotNodes) {
       // generate missing nodes and connect node to parent
       let lastChild = node as NetworkNode
-      for (let slot = node.level - 1; slot > parent.level; slot--) {
-        let newChild = createMissingSlotNode(slot, parent, node) as NetworkNode
+      for (let slot = node.slot - 1; slot > parent.slot; slot--) {
+        let newChild = createMissingSlotNode(slot, anchorSlot, parent, node) as NetworkNode
         nodes[newChild.id] = newChild
         edges.push({ from: lastChild.id, to: newChild.id, arrows: '' })
         lastChild = newChild
@@ -418,9 +489,9 @@ function forkchoiceNodesToNetworkData(
       node.weight = node.weight.minus(child.cumulativeToRootWeight);
     })
 
-    // calculate late nodes
-    let timestamp = node.forkchoiceNode?.extra_data?.timestamp as number
-    if (timestamp) {
+    // calculate late nodes (once per block: skip the empty/full payload variants)
+    let timestamp = (node.forkchoiceNode?.extra_data?.timestamp ?? node.forkchoiceNode?.timestamp) as number
+    if (timestamp && node.payloadStatus !== 'empty' && node.payloadStatus !== 'full') {
       let receivedAtSlot = timestampToSlot(genesisTime, secondsPerSlot, timestamp) - node.forkchoiceNode.slot
       if(receivedAtSlot >= 1) {
         node.isLate = true;
@@ -428,6 +499,26 @@ function forkchoiceNodesToNetworkData(
       }
     }
   })
+
+  // drop childless EMPTY payload nodes that carry (almost) none of their block's weight: noise in the picture.
+  // The block's weight is its PENDING node's weight (EMPTY + FULL subtrees); an unrevealed payload
+  // leaves EMPTY with 100% of it, so it is always kept.
+  if (hideEmptyNodes) {
+    const threshold = BigNumber(Number.isFinite(hideEmptyThresholdPercent) ? Math.max(0, hideEmptyThresholdPercent) : 0)
+    Object.keys(nodes).forEach(nodeId => {
+      const node = nodes[nodeId]
+      if (node.isMissingSlot || node.payloadStatus !== 'empty') return
+      if (node.childs.length > 0) return
+      const parent = nodes[node.parentRoot] as ExistingNetworkNode | undefined
+      const blockWeight = parent && !parent.isMissingSlot ? parent.cumulativeToRootWeight : node.cumulativeToRootWeight
+      const belowThreshold = node.cumulativeToRootWeight.times(100).lt(blockWeight.times(threshold))
+      if (!node.cumulativeToRootWeight.isZero() && !belowThreshold) return
+      if (parent && !parent.isMissingSlot) parent.childs = parent.childs.filter(child => child.id !== node.id)
+      edges = edges.filter(edge => edge.from !== node.id && edge.to !== node.id)
+      delete nodes[nodeId]
+      delete roots[nodeId]
+    })
+  }
 
   // calculate cumulative weights to head
   Object.keys(roots).forEach(rootId => {
@@ -505,10 +596,17 @@ function App() {
   const [pollMaxHistory, setPollMaxHistory] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
   const [sourceType, setSourceType] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
   const [drawMissingSlotNodes, setDrawMissingSlotNodes] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
+  const [hideEmptyNodes, setHideEmptyNodes] = useState<boolean>(DEFAULT_HIDE_EMPTY_NODES)
+  const [hideEmptyThreshold, setHideEmptyThreshold] = useState<number>(DEFAULT_HIDE_EMPTY_THRESHOLD)
+  // Gloas: block and payload nodes share a slot column, so columns get wider to keep big nodes apart
+  const [payloadColumns, setPayloadColumns] = useState<boolean>(false)
+  const slotWidth = payloadColumns ? SLOT_WIDTH * 2 : SLOT_WIDTH
+  const slotHalfWidth = slotWidth / 2
   const [physics, setPhysics] = useState<boolean>(DEFAULT_PHYSICS)
   const [networkType, setNetworkType] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
   const [genesisTime, setGenesisTime] = useState<number>(DEFAULT_GENESIS_TIME)
   const [secondsPerSlot, setSecondsPerSlot] = useState<number>(DEFAULT_SECONDS_PER_SLOT)
+  const [ptcSize, setPtcSize] = useState<number>(DEFAULT_PTC_SIZE)
   const [autoDetectStatus, setAutoDetectStatus] = useState<string>('')
 
   // settings edit
@@ -517,6 +615,8 @@ function App() {
   const [pollMaxHistoryEdit, setPollMaxHistoryEdit] = useState<number>(DEFAULT_POLL_MAX_HISTORY)
   const [sourceTypeEdit, setSourceTypeEdit] = useState<SourceType>(DEFAULT_SOURCE_TYPE)
   const [drawMissingSlotNodesEdit, setDrawMissingSlotNodesEdit] = useState<boolean>(DEFAULT_DRAW_MISSING_SLOT_NODES)
+  const [hideEmptyNodesEdit, setHideEmptyNodesEdit] = useState<boolean>(DEFAULT_HIDE_EMPTY_NODES)
+  const [hideEmptyThresholdEdit, setHideEmptyThresholdEdit] = useState<number>(DEFAULT_HIDE_EMPTY_THRESHOLD)
   const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_PHYSICS)
   const [networkTypeEdit, setNetworkTypeEdit] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
   const [genesisTimeEdit, setGenesisTimeEdit] = useState<number>(DEFAULT_GENESIS_TIME)
@@ -524,13 +624,14 @@ function App() {
   const inputFile = useRef<any>(null)
 
   // poll protoarray endpoint
+  // remembered per endpoint so a node without v2 is not probed on every poll
+  const forkChoiceApiVersion = useRef<ForkChoiceApiVersion>('unknown')
+  useEffect(() => { forkChoiceApiVersion.current = 'unknown' }, [protoArrayEndpoint])
+
   const getProtoArray = useCallback(async () => {
-    const url = forkChoiceUrl(protoArrayEndpoint)
     try {
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
-      const data = await res.json()
-      if (!Array.isArray(data?.fork_choice_nodes)) throw new Error(`no fork_choice_nodes in response from ${url}`)
+      const { version, data } = await fetchForkChoice(protoArrayEndpoint, forkChoiceApiVersion.current)
+      forkChoiceApiVersion.current = version
       setFetchedForckchoiceDump(data)
       clearError('fork choice')
     } catch (e) {
@@ -546,13 +647,14 @@ function App() {
       setGenesisTime(params.genesisTime)
       setGenesisTimeEdit(params.genesisTime)
       setSecondsPerSlot(params.secondsPerSlot)
+      setPtcSize(params.ptcSize ?? DEFAULT_PTC_SIZE)
       setAutoDetectStatus(`detected from ${protoArrayEndpoint || 'same origin'}`)
       clearError('node parameters')
     } catch (e) {
       setAutoDetectStatus(`detection failed: ${e instanceof Error ? e.message : e}`)
       reportError('node parameters', e)
     }
-  }, [protoArrayEndpoint, setGenesisTime, setGenesisTimeEdit, setSecondsPerSlot, setAutoDetectStatus, reportError, clearError])
+  }, [protoArrayEndpoint, setGenesisTime, setGenesisTimeEdit, setSecondsPerSlot, setPtcSize, setAutoDetectStatus, reportError, clearError])
 
   useEffect(() => {
     if (networkType === NetworkType.auto) detectNodeParams()
@@ -583,23 +685,24 @@ function App() {
     if (heads.length === 0) return
     network.moveTo({
       position: network.getPosition(heads[0].id),
-      offset: { x: SLOT_WIDTH * 3, y: 0 },
+      offset: { x: slotWidth * 3, y: 0 },
       animation: true
     })
     setheadIdx(0)
-  }, [heads, network, setheadIdx])
+  }, [heads, network, setheadIdx, slotWidth])
 
   // render current data
   useEffect(() => {
     try {
       if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
 
-      const { firstPOSNode, roots, heads, lateNodes, networkData } = forkchoiceNodesToNetworkData(genesisTime, secondsPerSlot, forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
+      const { firstPOSNode, roots, heads, lateNodes, networkData } = forkchoiceNodesToNetworkData(genesisTime, secondsPerSlot, forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes, hideEmptyNodes, hideEmptyThreshold, ptcSize)
       setHeads(heads)
       setLateNodes(lateNodes)
       setRoots(roots)
       setFirstPOSNode(firstPOSNode)
       setData(networkData as any)
+      setPayloadColumns(networkData.nodes.some(node => node.level % 2 === 1))
       clearError('data')
     } catch (e) {
       reportError('data', `error loading data - verify source type in settings (${e})`)
@@ -611,6 +714,9 @@ function App() {
     sourceType,
     nodeSizeMode,
     drawMissingSlotNodes,
+    hideEmptyNodes,
+    hideEmptyThreshold,
+    ptcSize,
     setData,
     setHeads,
     setLateNodes,
@@ -685,6 +791,8 @@ function App() {
     setSourceType(sourceTypeEdit)
     setSourceType(sourceTypeEdit)
     setDrawMissingSlotNodes(drawMissingSlotNodesEdit)
+    setHideEmptyNodes(hideEmptyNodesEdit)
+    setHideEmptyThreshold(hideEmptyThresholdEdit)
     setPhysics(physicsEdit)
     setNetworkType(networkTypeEdit)
     if (networkTypeEdit === NetworkType.auto) {
@@ -693,6 +801,7 @@ function App() {
     } else {
       setGenesisTime(genesisTimeEdit)
       setSecondsPerSlot(DEFAULT_SECONDS_PER_SLOT)
+      setPtcSize(DEFAULT_PTC_SIZE)
       setAutoDetectStatus('')
     }
 
@@ -714,6 +823,8 @@ function App() {
     pollPeriodEdit,
     pollMaxHistoryEdit,
     drawMissingSlotNodesEdit,
+    hideEmptyNodesEdit,
+    hideEmptyThresholdEdit,
     physicsEdit,
     networkTypeEdit,
     genesisTimeEdit,
@@ -723,9 +834,12 @@ function App() {
     setSourceType,
     setPhysics,
     setDrawMissingSlotNodes,
+    setHideEmptyNodes,
+    setHideEmptyThreshold,
     setNetworkType,
     setGenesisTime,
     setSecondsPerSlot,
+    setPtcSize,
     setAutoDetectStatus,
     setProtoArrayEndpointEdit])
 
@@ -748,6 +862,14 @@ function App() {
   const handleSetDrawMissingSlotNodes = useCallback((event) => {
     setDrawMissingSlotNodesEdit(event.target.checked)
   }, [setDrawMissingSlotNodesEdit])
+
+  const handleSetHideEmptyNodes = useCallback((event) => {
+    setHideEmptyNodesEdit(event.target.checked)
+  }, [setHideEmptyNodesEdit])
+
+  const handleSetHideEmptyThreshold = useCallback((event) => {
+    setHideEmptyThresholdEdit(Number(event.target.value))
+  }, [setHideEmptyThresholdEdit])
 
   const handleSetPhysics = useCallback((event) => {
     setPhysicsEdit(event.target.checked)
@@ -955,10 +1077,27 @@ function App() {
   }, [setForckchoiceDumpArray, inputFile, sourceType])
 
 
+  // bundled dumps come in a known format: select the matching source type so they render
+  const selectSourceType = useCallback((type: SourceType) => {
+    setSourceType(type)
+    setSourceTypeEdit(type)
+  }, [setSourceType, setSourceTypeEdit])
+
+  // legacy Teku (22.12.0 or earlier) dump
   const handleLoadTestData = useCallback(() => {
     let data: any[] | undefined = parseTekuData(testData)
-    if (data !== undefined) setForckchoiceDumpArray(data)
-  }, [setForckchoiceDumpArray])
+    if (data === undefined) return
+    selectSourceType(SourceType.teku)
+    setForckchoiceDumpArray(data)
+  }, [setForckchoiceDumpArray, selectSourceType])
+
+  // synthetic Gloas v2 dump (see scripts/genGloasTestData.js)
+  const handleLoadGloasTestData = useCallback(() => {
+    let data: any[] | undefined = parseStandardData(testDataGloas)
+    if (data === undefined) return
+    selectSourceType(SourceType.standard)
+    setForckchoiceDumpArray(data)
+  }, [setForckchoiceDumpArray, selectSourceType])
 
   const events = useMemo(() => {
     return {
@@ -1013,14 +1152,14 @@ function App() {
 
         Object.keys(roots).forEach(rootId => {
           let node = roots[rootId]
-          if (!leftMostNode || node.level < minSlot) {
-            minSlot = node.level
+          if (!leftMostNode || node.slot < minSlot) {
+            minSlot = node.slot
             leftMostNode = node
           }
         })
 
         heads.forEach(head => {
-          if (head.level > maxSlot) maxSlot = head.level
+          if (head.slot > maxSlot) maxSlot = head.slot
         })
 
         const minEpoch: number = Math.floor(minSlot / SLOT_PER_EPOCH)
@@ -1030,6 +1169,8 @@ function App() {
         maxSlot = maxEpoch * SLOT_PER_EPOCH + SLOT_PER_EPOCH - 1
 
         const leftMostPosition = network.getPosition(leftMostNode.id)
+        // with Gloas payload nodes present, block nodes sit on the left half of their slot column
+        const blockOffset = payloadColumns ? slotWidth / 4 : 0
 
         const clientHalfHeightOffset = (ctx.canvas.clientHeight / 2) / scale
         const clientHeightOffset = ctx.canvas.clientHeight / scale
@@ -1040,8 +1181,8 @@ function App() {
         // epoch grid
         const colorA = "#FFFFFF"
         const colorB = "#CCFFFF"
-        const minEpochStartOffset = leftMostPosition.x - SLOT_HALF_WIDTH + ((minSlot - leftMostNodeSlot) * SLOT_WIDTH)
-        const epochWidth = SLOT_PER_EPOCH * SLOT_WIDTH
+        const minEpochStartOffset = leftMostPosition.x + blockOffset - slotHalfWidth + ((minSlot - leftMostNodeSlot) * slotWidth)
+        const epochWidth = SLOT_PER_EPOCH * slotWidth
 
         let beginEpochPos = minEpochStartOffset
         ctx.font = "30px Georgia"
@@ -1063,9 +1204,9 @@ function App() {
           const slotLabel = slot + " (" + slot % SLOT_PER_EPOCH + ")"
           let slotDiff: number = slot - leftMostNodeSlot
           ctx.beginPath()
-          let slotCenter = slotDiff * SLOT_WIDTH + leftMostPosition.x
-          ctx.moveTo(slotCenter + SLOT_HALF_WIDTH, absoluteTop + 50)
-          ctx.lineTo(slotCenter + SLOT_HALF_WIDTH, absoluteBottom)
+          let slotCenter = slotDiff * slotWidth + leftMostPosition.x + blockOffset
+          ctx.moveTo(slotCenter + slotHalfWidth, absoluteTop + 50)
+          ctx.lineTo(slotCenter + slotHalfWidth, absoluteBottom)
           ctx.stroke()
           ctx.fillStyle = "#000000"
           ctx.fillText(slotLabel, slotCenter - ctx.measureText(slotLabel).width / 2, absoluteTop + 60)
@@ -1095,7 +1236,7 @@ function App() {
           let expectedTimestamp = slotToTimestamp(genesisTime, secondsPerSlot, node.forkchoiceNode.slot)
           let newy = nodePosition.y + 100
           ctx.lineTo(nodePosition.x, newy)
-          let newx = nodePosition.x + (lateBySlot * SLOT_WIDTH) - SLOT_HALF_WIDTH
+          let newx = nodePosition.x + blockOffset + (lateBySlot * slotWidth) - slotHalfWidth
           ctx.lineTo(newx, newy)
           ctx.moveTo(newx, newy - 10)
           ctx.lineTo(newx, newy + 10)
@@ -1136,11 +1277,12 @@ function App() {
         })
       },
     }
-  }, [network, genesisTime, secondsPerSlot, networkNodes, heads, lateNodes, roots, firstPOSNode])
+  }, [network, genesisTime, secondsPerSlot, networkNodes, heads, lateNodes, roots, firstPOSNode, payloadColumns, slotWidth, slotHalfWidth])
 
   return (
     <>
       <ErrorPanel errors={activeErrors} />
+      {payloadColumns && <PtcLegend ptcSize={ptcSize} />}
         <div className="App">
           <Modal
             isOpen={showSettings}
@@ -1153,7 +1295,7 @@ function App() {
             <label>
               Beacon node URL:
               <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} placeholder="http://localhost:5051" />
-              <span style={{ marginLeft: 8, opacity: 0.7 }}>(base URL of a standard Beacon API; fork choice is read from /eth/v1/debug/fork_choice)</span>
+              <span style={{ marginLeft: 8, opacity: 0.7 }}>(base URL of a standard Beacon API; fork choice is read from /eth/v2/debug/fork_choice, falling back to v1)</span>
             </label>
             <br></br>
             <br></br>
@@ -1186,6 +1328,17 @@ function App() {
             <br></br>
             <label>
               <input type="checkbox"
+                checked={hideEmptyNodesEdit}
+                onChange={handleSetHideEmptyNodes}
+              />
+              Hide childless EMPTY payload nodes with weight below
+              <input disabled={!hideEmptyNodesEdit} type="number" min="0" max="100" step="0.1" style={{ width: '60px', margin: '0 4px' }} value={hideEmptyThresholdEdit} onChange={handleSetHideEmptyThreshold} />
+              % of their block's weight (Gloas)
+            </label>
+            <br></br>
+            <br></br>
+            <label>
+              <input type="checkbox"
                 checked={physicsEdit}
                 onChange={handleSetPhysics}
               />
@@ -1209,7 +1362,7 @@ function App() {
                 <br></br>
                 <br></br>
                 <label>
-                  Seconds per slot: {secondsPerSlot}
+                  Seconds per slot: {secondsPerSlot}, PTC size: {ptcSize}
                   <span style={{ marginLeft: 16, opacity: 0.7 }}>{autoDetectStatus}</span>
                 </label>
               </>
@@ -1218,7 +1371,8 @@ function App() {
           <div className="main">
             <div className="header">
               <button style={{ marginRight: 100 }} onClick={handleShowSettings}>Settings</button>
-              <button onClick={handleLoadTestData}>load test data</button>
+              <button onClick={handleLoadTestData} title="legacy Teku dump; switches source type to Teku">load test data</button>
+              <button onClick={handleLoadGloasTestData} title="synthetic Gloas v2 dump; switches source type to Standard">load Gloas test data</button>
               <button onClick={handleImportData}>import</button>
               <button onClick={handleExportData}>export</button>
               <div style={{ marginLeft: 100, marginRight: 100 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
@@ -1244,8 +1398,8 @@ function App() {
                       enabled: true,
                       direction: 'LR',
                       sortMethod: 'directed',
-                      ...(physics ? {} : { nodeSpacing: SLOT_WIDTH }),
-                      levelSeparation: SLOT_WIDTH
+                      ...(physics ? {} : { nodeSpacing: slotWidth }),
+                      levelSeparation: slotWidth / 2
                     }
                   },
                   edges: { arrows: 'to' },

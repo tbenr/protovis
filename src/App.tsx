@@ -112,7 +112,29 @@ type IdToNetworkNode = {
 const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.rootToHeadsCumulated
 const DEFAULT_SOURCE_TYPE: SourceType = SourceType.standard
 const DEFAULT_NETWORK_TYPE: NetworkType = NetworkType.auto
-const DEFAULT_GENESIS_TIME = MAINNET_GENESIS_TIME
+// URL parameters (handy for demos, bookmarks and screenshots):
+//   ?network=auto|mainnet|goerli|sepolia|custom   initial network (a fixed one skips node detection)
+//   ?sample=gloas|teku                            load a bundled dump on start
+//   ?zoom=0.7                                     zoom scale re-applied whenever the view centers on the head
+//   ?settings=1                                   open the settings dialog on start
+function networkTypeFromUrl(): NetworkType | undefined {
+  const key = new URLSearchParams(window.location.search).get('network') as keyof typeof NetworkType | null
+  return key && key in NetworkType ? NetworkType[key] : undefined
+}
+function genesisTimeFor(network: NetworkType): number {
+  switch (network) {
+    case NetworkType.goerli: return GOERLI_GENESIS_TIME
+    case NetworkType.sepolia: return SEPOLIA_GENESIS_TIME
+    default: return MAINNET_GENESIS_TIME
+  }
+}
+const INITIAL_NETWORK_TYPE: NetworkType = networkTypeFromUrl() ?? DEFAULT_NETWORK_TYPE
+const INITIAL_GENESIS_TIME: number = genesisTimeFor(INITIAL_NETWORK_TYPE)
+const INITIAL_SHOW_SETTINGS: boolean = new URLSearchParams(window.location.search).get('settings') === '1'
+const INITIAL_ZOOM: number | undefined = (() => {
+  const zoom = Number(new URLSearchParams(window.location.search).get('zoom'))
+  return Number.isFinite(zoom) && zoom > 0 ? zoom : undefined
+})()
 const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
 const DEFAULT_HIDE_EMPTY_NODES: boolean = true
 // childless EMPTY nodes below this share (%) of their block's weight are hidden
@@ -568,7 +590,7 @@ function App() {
     })
   }, [setActiveErrors])
 
-  const [showSettings, setShowSettings] = useState<boolean>(false)
+  const [showSettings, setShowSettings] = useState<boolean>(INITIAL_SHOW_SETTINGS)
 
   const [forckchoiceDumpArray, setForckchoiceDumpArray] = useState<ForckchoiceDump[]>([])
   const [fetchedForckchoiceDump, setFetchedForckchoiceDump] = useState<any>()
@@ -602,8 +624,8 @@ function App() {
   const slotWidth = payloadColumns ? SLOT_WIDTH * 2 : SLOT_WIDTH
   const slotHalfWidth = slotWidth / 2
   const [physics, setPhysics] = useState<boolean>(DEFAULT_PHYSICS)
-  const [networkType, setNetworkType] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
-  const [genesisTime, setGenesisTime] = useState<number>(DEFAULT_GENESIS_TIME)
+  const [networkType, setNetworkType] = useState<NetworkType>(INITIAL_NETWORK_TYPE)
+  const [genesisTime, setGenesisTime] = useState<number>(INITIAL_GENESIS_TIME)
   const [secondsPerSlot, setSecondsPerSlot] = useState<number>(DEFAULT_SECONDS_PER_SLOT)
   const [ptcSize, setPtcSize] = useState<number>(DEFAULT_PTC_SIZE)
   const [autoDetectStatus, setAutoDetectStatus] = useState<string>('')
@@ -617,8 +639,8 @@ function App() {
   const [hideEmptyNodesEdit, setHideEmptyNodesEdit] = useState<boolean>(DEFAULT_HIDE_EMPTY_NODES)
   const [hideEmptyThresholdEdit, setHideEmptyThresholdEdit] = useState<number>(DEFAULT_HIDE_EMPTY_THRESHOLD)
   const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_PHYSICS)
-  const [networkTypeEdit, setNetworkTypeEdit] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
-  const [genesisTimeEdit, setGenesisTimeEdit] = useState<number>(DEFAULT_GENESIS_TIME)
+  const [networkTypeEdit, setNetworkTypeEdit] = useState<NetworkType>(INITIAL_NETWORK_TYPE)
+  const [genesisTimeEdit, setGenesisTimeEdit] = useState<number>(INITIAL_GENESIS_TIME)
 
   const inputFile = useRef<any>(null)
 
@@ -696,10 +718,12 @@ function App() {
     // push it out of view: the offset is capped to a share of the visible canvas width
     const canvasWidth: number = network?.canvas?.frame?.canvas?.clientWidth ?? 0
     const offsetX = canvasWidth > 0 ? Math.min(slotWidth * 3, canvasWidth * 0.3) : 0
+    // a scripted zoom (?zoom=) is applied instantly so screenshots do not catch the animation midway
+    const scale = INITIAL_ZOOM !== undefined ? { scale: INITIAL_ZOOM, animation: false } : { animation: true }
     network.moveTo({
       position: network.getPosition(heads[0].id),
       offset: { x: offsetX, y: 0 },
-      animation: true
+      ...scale
     })
     setheadIdx(0)
   }, [heads, network, setheadIdx, slotWidth])
@@ -1111,6 +1135,16 @@ function App() {
     selectSourceType(SourceType.standard)
     setForckchoiceDumpArray(data)
   }, [setForckchoiceDumpArray, selectSourceType])
+
+  // ?sample=gloas|teku: load a bundled dump once on start (the network parameter is applied as initial state above)
+  const sampleParamHandled = useRef(false)
+  useEffect(() => {
+    if (sampleParamHandled.current) return
+    sampleParamHandled.current = true
+    const sample = new URLSearchParams(window.location.search).get('sample')
+    if (sample === 'gloas') handleLoadGloasTestData()
+    else if (sample === 'teku') handleLoadTestData()
+  }, [handleLoadGloasTestData, handleLoadTestData])
 
   const events = useMemo(() => {
     return {

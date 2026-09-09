@@ -7,8 +7,7 @@ import VisNetworkReactComponent from "vis-network-react"
 import { Range, getTrackBackground } from 'react-range'
 import Modal from 'react-modal'
 
-import Dropdown, { Option } from 'react-dropdown';
-import 'react-dropdown/style.css';
+import { Option } from 'react-dropdown';
 
 import hljs from 'highlight.js'
 import 'highlight.js/styles/default.css'
@@ -626,18 +625,28 @@ function App() {
   // poll protoarray endpoint
   // remembered per endpoint so a node without v2 is not probed on every poll
   const forkChoiceApiVersion = useRef<ForkChoiceApiVersion>('unknown')
-  useEffect(() => { forkChoiceApiVersion.current = 'unknown' }, [protoArrayEndpoint])
+  const [forkChoiceApiVersionLabel, setForkChoiceApiVersionLabel] = useState<ForkChoiceApiVersion>('unknown')
+  const [lastFetchAt, setLastFetchAt] = useState<moment.Moment | undefined>()
+  useEffect(() => { forkChoiceApiVersion.current = 'unknown'; setForkChoiceApiVersionLabel('unknown'); setLastFetchAt(undefined) }, [protoArrayEndpoint])
 
   const getProtoArray = useCallback(async () => {
     try {
       const { version, data } = await fetchForkChoice(protoArrayEndpoint, forkChoiceApiVersion.current)
       forkChoiceApiVersion.current = version
+      setForkChoiceApiVersionLabel(version)
+      setLastFetchAt(moment())
       setFetchedForckchoiceDump(data)
       clearError('fork choice')
     } catch (e) {
       reportError('fork choice', e)
     }
   }, [setFetchedForckchoiceDump, protoArrayEndpoint, reportError, clearError])
+
+  // intervals call through this ref so they always use the latest endpoint and settings,
+  // instead of the poll function captured when the timer was created
+  const getProtoArrayRef = useRef(getProtoArray)
+  useEffect(() => { getProtoArrayRef.current = getProtoArray }, [getProtoArray])
+  const pollTick = useCallback(() => { getProtoArrayRef.current() }, [])
 
   // Auto network: read genesis time and slot duration from the connected node
   const detectNodeParams = useCallback(async () => {
@@ -683,9 +692,13 @@ function App() {
 
   const handleCanonicalHead = useCallback(() => {
     if (heads.length === 0) return
+    // show the head towards the right edge, leaving room for its ancestors on the left, but never
+    // push it out of view: the offset is capped to a share of the visible canvas width
+    const canvasWidth: number = network?.canvas?.frame?.canvas?.clientWidth ?? 0
+    const offsetX = canvasWidth > 0 ? Math.min(slotWidth * 3, canvasWidth * 0.3) : 0
     network.moveTo({
       position: network.getPosition(heads[0].id),
-      offset: { x: slotWidth * 3, y: 0 },
+      offset: { x: offsetX, y: 0 },
       animation: true
     })
     setheadIdx(0)
@@ -736,20 +749,20 @@ function App() {
     if (pollIsActive && !pollTimer) {
       if (networkType === NetworkType.auto) detectNodeParams()
       getProtoArray()
-      let timer = setInterval(getProtoArray, pollPeriod)
+      let timer = setInterval(pollTick, pollPeriod)
 
       setPollTimer(timer)
     }
-  }, [getProtoArray, detectNodeParams, networkType, setPollTimer, setPoll, pollTimer, pollPeriod])
+  }, [getProtoArray, pollTick, detectNodeParams, networkType, setPollTimer, setPoll, pollTimer, pollPeriod])
 
   useEffect(() => {
     if (pollActiveAtStartup) {
       getProtoArray()
-      const timer = setInterval(getProtoArray, DEFAULT_POLLING_PERIOD)
+      const timer = setInterval(pollTick, DEFAULT_POLLING_PERIOD)
       setPollTimer(timer)
       return () => clearInterval(timer)
     }
-  }, [getProtoArray])
+  }, [getProtoArray, pollTick])
 
 
   useEffect(() => {
@@ -807,12 +820,12 @@ function App() {
 
     if (poll) {
       clearInterval(pollTimer)
-      const timer = setInterval(getProtoArray, pollPeriodEdit)
+      const timer = setInterval(pollTick, pollPeriodEdit)
       setPollTimer(timer)
     }
 
   }, [setShowSettings,
-    getProtoArray,
+    pollTick,
     detectNodeParams,
     protoArrayEndpoint,
     networkType,
@@ -1279,114 +1292,187 @@ function App() {
     }
   }, [network, genesisTime, secondsPerSlot, networkNodes, heads, lateNodes, roots, firstPOSNode, payloadColumns, slotWidth, slotHalfWidth])
 
+  const forkChoiceError = activeErrors['fork choice']
+  const connectionState: 'connected' | 'error' | 'idle' = forkChoiceError ? 'error' : (lastFetchAt ? 'connected' : 'idle')
+  const connectionTooltip = [
+    `endpoint: ${protoArrayEndpoint || 'same origin (proxied)'}`,
+    `fork choice API: ${forkChoiceApiVersionLabel === 'unknown' ? 'not probed yet' : `/eth/${forkChoiceApiVersionLabel}/debug/fork_choice`}`,
+    `last fetch: ${lastFetchAt ? lastFetchAt.local().format('YYYY-MM-DD HH:mm:ss') : 'never'}`,
+    `polling: ${poll ? `every ${pollPeriod / 1000}s` : 'off'}`,
+    `network: ${networkType}`,
+    `genesis: ${moment(genesisTime * 1000).local().format('YYYY-MM-DD HH:mm:ss Z')}`,
+    `slot: ${secondsPerSlot}s · PTC size: ${ptcSize}`,
+    ...(forkChoiceError ? [`error: ${forkChoiceError}`] : []),
+  ].join('\n')
+
   return (
     <>
-      <ErrorPanel errors={activeErrors} />
-      {payloadColumns && <PtcLegend ptcSize={ptcSize} />}
+      {payloadColumns && !showSettings && <PtcLegend ptcSize={ptcSize} />}
         <div className="App">
           <Modal
             isOpen={showSettings}
             contentLabel="Settings"
             ariaHideApp={false}
+            className="settings-dialog"
+            overlayClassName="settings-overlay"
+            onRequestClose={handleCloseSettings}
           >
-            <button onClick={handleCloseSettings}>Close Settings</button>
-            <br></br>
-            <br></br>
-            <label>
-              Beacon node URL:
-              <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} placeholder="http://localhost:5051" />
-              <span style={{ marginLeft: 8, opacity: 0.7 }}>(base URL of a standard Beacon API; fork choice is read from /eth/v2/debug/fork_choice, falling back to v1)</span>
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              Refresh (ms):
-              <input type="number" style={{ width: '100px' }} value={pollPeriodEdit} onChange={handleSetPollingPeriod} />
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              Max history:
-              <input type="number" style={{ width: '100px' }} value={pollMaxHistoryEdit} onChange={handleSetPollMaxHistory} />
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              Source type
-              <Dropdown options={Object.values(SourceType)} onChange={handleSourceType} value={sourceTypeEdit} placeholder="Select Source Type" />
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              <input type="checkbox"
-                checked={drawMissingSlotNodesEdit}
-                onChange={handleSetDrawMissingSlotNodes}
-              />
-              Draw missing slot nodes (improves fork visualization)
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              <input type="checkbox"
-                checked={hideEmptyNodesEdit}
-                onChange={handleSetHideEmptyNodes}
-              />
-              Hide childless EMPTY payload nodes with weight below
-              <input disabled={!hideEmptyNodesEdit} type="number" min="0" max="100" step="0.1" style={{ width: '60px', margin: '0 4px' }} value={hideEmptyThresholdEdit} onChange={handleSetHideEmptyThreshold} />
-              % of their block's weight (Gloas)
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              <input type="checkbox"
-                checked={physicsEdit}
-                onChange={handleSetPhysics}
-              />
-              Physics
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              Network
-              <Dropdown options={Object.values(NetworkType)} onChange={handleSetNetworkType} value={networkTypeEdit} placeholder="Select Network" />
-            </label>
-            <br></br>
-            <br></br>
-            <label>
-              Genesis Time
-              <input disabled={networkTypeEdit !== NetworkType.custom} type="number" style={{ width: '100px' }} value={genesisTimeEdit} onChange={handleSetGenesisTime} />
-              {`${moment(genesisTimeEdit * 1000).local()}`}
-            </label>
-            {networkTypeEdit === NetworkType.auto &&
-              <>
-                <br></br>
-                <br></br>
-                <label>
-                  Seconds per slot: {secondsPerSlot}, PTC size: {ptcSize}
-                  <span style={{ marginLeft: 16, opacity: 0.7 }}>{autoDetectStatus}</span>
+            <div className="settings-header">
+              <h2>Settings</h2>
+              <button className="tb-btn settings-close" onClick={handleCloseSettings} title="apply and close">Done</button>
+            </div>
+
+            <section className="settings-section">
+              <h3>Connection</h3>
+              <div className="settings-row">
+                <label className="settings-label" htmlFor="s-url">Beacon node URL</label>
+                <div className="settings-control">
+                  <input id="s-url" className="settings-input settings-input-wide" type="text" value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} placeholder="http://localhost:5051" />
+                  <div className="settings-hint">Base URL of a standard Beacon API. Fork choice is read from /eth/v2/debug/fork_choice, falling back to v1. Leave empty when served through the bundled proxy.</div>
+                </div>
+              </div>
+              <div className="settings-row">
+                <label className="settings-label" htmlFor="s-refresh">Refresh</label>
+                <div className="settings-control settings-inline">
+                  <input id="s-refresh" className="settings-input settings-input-num" type="number" min="500" step="500" value={pollPeriodEdit} onChange={handleSetPollingPeriod} />
+                  <span className="settings-unit">ms</span>
+                  <label className="settings-label settings-label-inline" htmlFor="s-history">Max history</label>
+                  <input id="s-history" className="settings-input settings-input-num" type="number" min="1" value={pollMaxHistoryEdit} onChange={handleSetPollMaxHistory} />
+                  <span className="settings-unit">snapshots</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <label className="settings-label" htmlFor="s-source">Source type</label>
+                <div className="settings-control">
+                  <select id="s-source" className="settings-input" value={sourceTypeEdit} onChange={(event) => handleSourceType({ value: event.target.value, label: event.target.value })}>
+                    {Object.values(SourceType).map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                  <div className="settings-hint">Standard covers current nodes (v1 and Gloas v2). The others parse legacy client-specific dumps.</div>
+                </div>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <h3>Network</h3>
+              <div className="settings-row">
+                <label className="settings-label" htmlFor="s-network">Network</label>
+                <div className="settings-control">
+                  <select id="s-network" className="settings-input" value={networkTypeEdit} onChange={(event) => handleSetNetworkType({ value: event.target.value, label: event.target.value })}>
+                    {Object.values(NetworkType).map(type => <option key={type} value={type}>{type}</option>)}
+                  </select>
+                  {networkTypeEdit === NetworkType.auto &&
+                    <div className="settings-hint">
+                      Genesis time, slot duration and PTC size are read from the node whenever settings are applied or polling starts.
+                      {autoDetectStatus && <span className={autoDetectStatus.startsWith('detection failed') ? 'settings-status settings-status-bad' : 'settings-status'}> {autoDetectStatus}</span>}
+                    </div>}
+                </div>
+              </div>
+              <div className="settings-row">
+                <label className="settings-label" htmlFor="s-genesis">Genesis time</label>
+                <div className="settings-control settings-inline">
+                  <input id="s-genesis" className="settings-input settings-input-num settings-input-epoch" disabled={networkTypeEdit !== NetworkType.custom} type="number" value={genesisTimeEdit} onChange={handleSetGenesisTime} />
+                  <span className="settings-unit">{moment(genesisTimeEdit * 1000).local().format('YYYY-MM-DD HH:mm:ss Z')}</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <span className="settings-label">Slot</span>
+                <div className="settings-control settings-inline">
+                  <span className="settings-value">{secondsPerSlot}s</span>
+                  <span className="settings-unit">per slot</span>
+                  <span className="settings-label settings-label-inline">PTC size</span>
+                  <span className="settings-value">{ptcSize}</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <h3>Display</h3>
+              <div className="settings-row">
+                <label className="switch settings-switch">
+                  <input type="checkbox" checked={drawMissingSlotNodesEdit} onChange={handleSetDrawMissingSlotNodes} />
+                  <span className="switch-track" />
+                  Draw missing slot nodes
+                  <span className="settings-hint-inline">improves fork visualization</span>
                 </label>
-              </>
-            }
+              </div>
+              <div className="settings-row">
+                <label className="switch settings-switch">
+                  <input type="checkbox" checked={hideEmptyNodesEdit} onChange={handleSetHideEmptyNodes} />
+                  <span className="switch-track" />
+                  Hide childless EMPTY payload nodes below
+                  <input disabled={!hideEmptyNodesEdit} className="settings-input settings-input-num settings-input-small" type="number" min="0" max="100" step="0.1" value={hideEmptyThresholdEdit} onChange={handleSetHideEmptyThreshold} onClick={(event) => event.preventDefault()} />
+                  % of block weight
+                </label>
+              </div>
+              <div className="settings-row">
+                <label className="switch settings-switch">
+                  <input type="checkbox" checked={physicsEdit} onChange={handleSetPhysics} />
+                  <span className="switch-track" />
+                  Physics
+                  <span className="settings-hint-inline">let nodes settle within their slot column</span>
+                </label>
+              </div>
+            </section>
           </Modal>
           <div className="main">
-            <div className="header">
-              <button style={{ marginRight: 100 }} onClick={handleShowSettings}>Settings</button>
-              <button onClick={handleLoadTestData} title="legacy Teku dump; switches source type to Teku">load test data</button>
-              <button onClick={handleLoadGloasTestData} title="synthetic Gloas v2 dump; switches source type to Standard">load Gloas test data</button>
-              <button onClick={handleImportData}>import</button>
-              <button onClick={handleExportData}>export</button>
-              <div style={{ marginLeft: 100, marginRight: 100 }} className="importantText heads" >{'Heads: ' + heads.length}</div>
-              <button onClick={handleCanonicalHead}>Center on canonical head</button>
-              <button style={{ marginLeft: 100 }} onClick={handlePreviousHead}>&lt;</button>
-              Cycle heads
-              <button onClick={handleNextHead}>&gt;</button>
-              <div style={{ marginLeft: 100, width: 400, display: 'inline-flex' }}>
-                Node Size mode
-                <Dropdown controlClassName='myControlClassName' options={Object.values(NodeSizeMode)} onChange={handleNodeSizeMode} value={nodeSizeMode} placeholder="Select Note Size Mode" />
+            <div className="header toolbar">
+              <div className="tb-region tb-left">
+                <div className="tb-group">
+                  <button className="tb-btn" onClick={handleShowSettings} title="settings">⚙ Settings</button>
+                  <button className="tb-btn" onClick={handleImportData} title="import a fork choice dump">⇧ Import</button>
+                  <button className="tb-btn" onClick={handleExportData} title="export the current history">⇩ Export</button>
+                  <details className="tb-menu">
+                    <summary className="tb-btn" title="bundled sample data">⚗ Samples ▾</summary>
+                    <div className="tb-menu-items">
+                      <button className="tb-btn" onClick={handleLoadTestData} title="legacy Teku dump; switches source type to Teku">Legacy Teku dump</button>
+                      <button className="tb-btn" onClick={handleLoadGloasTestData} title="synthetic Gloas v2 dump; switches source type to Standard">Synthetic Gloas dump</button>
+                    </div>
+                  </details>
+                </div>
+                <div className="tb-group">
+                  <button className={poll ? 'tb-btn active' : 'tb-btn'} onClick={() => togglePoll(!poll)} title={poll ? 'stop polling the node' : 'start polling the node'}>{poll ? '■ Stop' : '▶ Poll'}</button>
+                  {poll && <span className="tb-live">● live · {pollPeriod / 1000}s</span>}
+                  <label className="switch tb-switch" title="jump to the latest snapshot as new data arrives">
+                    <input type="checkbox" checked={followPoll} onChange={(event) => setFollowPoll(event.target.checked)} />
+                    <span className="switch-track" />
+                    follow
+                  </label>
+                </div>
+              </div>
+              <div className="tb-region tb-center">
+                <div className="tb-group">
+                  <span className="tb-text">Heads <span className="tb-badge">{heads.length}</span></span>
+                  <button className="tb-btn" onClick={handleNextHead} title="previous head (heavier)">‹</button>
+                  <span className="tb-text tb-mono" title="selected head: position by weight, and its slot">
+                    {heads.length > 0 ? `${headIdx + 1} / ${heads.length} · slot ${heads[headIdx]?.slot ?? heads[0].slot}` : '0 / 0'}
+                  </span>
+                  <button className="tb-btn" onClick={handlePreviousHead} title="next head (lighter)">›</button>
+                  <button className="tb-btn" onClick={handleCanonicalHead} title="center the view on the canonical head">⌖ Center</button>
+                  <label className="switch tb-switch" title="re-center the view on the canonical head after each update">
+                    <input type="checkbox" checked={followCanonicalHead} onChange={(event) => setFollowCanonicalHead(event.target.checked)} />
+                    <span className="switch-track" />
+                    auto
+                  </label>
+                </div>
+              </div>
+              <div className="tb-region tb-right">
+                <div className="tb-group">
+                  <span className="tb-text">Size</span>
+                  <select className="tb-select" value={nodeSizeMode} onChange={(event) => handleNodeSizeMode({ value: event.target.value, label: event.target.value })} title="what a node's size represents">
+                    {Object.values(NodeSizeMode).map(mode => <option key={mode} value={mode}>{mode}</option>)}
+                  </select>
+                </div>
+                {heads.length > 0 && <span className="tb-chip" title="epoch of the canonical head">epoch {Math.floor(heads[0].slot / SLOT_PER_EPOCH)}</span>}
+                <span className={`tb-chip tb-conn ${connectionState}`} title={connectionTooltip}>
+                  {connectionState === 'connected' && `● connected · ${forkChoiceApiVersionLabel}`}
+                  {connectionState === 'error' && '● node error'}
+                  {connectionState === 'idle' && '○ not connected'}
+                </span>
               </div>
 
               <input type='file' id='file' onChange={(e: any) => readFileOnUpload(e.target.files[0])} ref={inputFile} style={{ display: 'none' }} />
             </div>
+            <ErrorPanel errors={activeErrors} />
             <div className="network">
               <VisNetworkReactComponent
                 data={data}
@@ -1429,125 +1515,51 @@ function App() {
               />
             </div>
             <div className="footer">
-              <div style={{ width: '33%' }}>
-                <label>
-                  <input type="checkbox"
-                    defaultChecked={poll}
-                    onChange={(event) => togglePoll(event.target.checked)}
-                  />
-                  Poll endpoint for data
-                </label>
-              </div>
-              <div style={{ width: '33%' }}>
-                <label>
-                  <input type="checkbox"
-                    checked={followPoll}
-                    onChange={(event) => setFollowPoll(event.target.checked)}
-                  />
-                  Follow Polling
-                </label>
-              </div>
-              <div style={{ width: '33%' }}>
-                <label>
-                  <input type="checkbox"
-                    checked={followCanonicalHead}
-                    onChange={(event) => setFollowCanonicalHead(event.target.checked)}
-                  />
-                  Always center on canonical head
-                </label>
-              </div>
-              <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[0].timestamp.toLocaleString() : 'N/A'}</div>
-              <div className="slider">
-
-                <Range renderTrack={({ props, children }) => (
-                  <div
-                    onMouseDown={props.onMouseDown}
-                    onTouchStart={props.onTouchStart}
-                    style={{
-                      ...props.style,
-                      height: "36px",
-                      display: "flex",
-                      width: "100%"
-                    }}
-                  >
+              <div className="timeline">
+                <span className="timeline-time" title={forckchoiceDumpArray.length > 0 ? `oldest snapshot: ${forckchoiceDumpArray[0].timestamp.local().format('YYYY-MM-DD HH:mm:ss Z')}` : 'no snapshots yet'}>{forckchoiceDumpArray.length > 0 ? forckchoiceDumpArray[0].timestamp.local().format('HH:mm:ss') : '--:--:--'}</span>
+                <div className="timeline-slider">
+                  <Range renderTrack={({ props, children }) => (
                     <div
-                      ref={props.ref}
-                      style={{
-                        height: "5px",
-                        width: "100%",
-                        borderRadius: "4px",
-                        background: getTrackBackground({
-                          values: [currentForckchoiceDumpIdx],
-                          colors: ["#548BF4", "#ccc"],
-                          min: 0,
-                          max: forckchoiceDumpArray.length - 1
-                        }),
-                        alignSelf: "center"
-                      }}
+                      onMouseDown={props.onMouseDown}
+                      onTouchStart={props.onTouchStart}
+                      className="timeline-track-area"
+                      style={props.style}
                     >
-                      {children}
-                    </div>
-                  </div>
-                )}
-                  renderThumb={({ props, isDragged }) => (
-                    <div
-                      {...props}
-                      style={{
-                        ...props.style,
-                        height: '42px',
-                        width: '21px',
-                        borderRadius: '4px',
-                        backgroundColor: '#FFF',
-                        display: 'flex',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        boxShadow: '0px 2px 6px #AAA'
-                      }}
-                    >
-                      {forckchoiceDumpArray.length > 0 &&
-                        <div
-                          style={{
-                            position: 'absolute',
-                            top: '48px',
-                            color: '#fff',
-                            fontWeight: 'bold',
-                            fontSize: '14px',
-                            fontFamily: 'Arial,Helvetica Neue,Helvetica,sans-serif',
-                            padding: '4px',
-                            borderRadius: '4px',
-                            backgroundColor: '#548BF4'
-                          }}
-                        >
-                          {forckchoiceDumpArray[currentForckchoiceDumpIdx]?.timestamp.local().format('HH:mm:ss')}
-                        </div>}
                       <div
+                        ref={props.ref}
+                        className="timeline-track"
                         style={{
-                          height: '16px',
-                          width: '5px',
-                          backgroundColor: isDragged ? '#548BF4' : '#CCC'
+                          background: getTrackBackground({
+                            values: [currentForckchoiceDumpIdx],
+                            colors: ['#3fb950', '#4a4a4a'],
+                            min: 0,
+                            max: Math.max(1, forckchoiceDumpArray.length - 1)
+                          })
                         }}
-                      />
+                      >
+                        {children}
+                      </div>
                     </div>
                   )}
-                  renderMark={({ props, index }) => (
-                    <div
-                      {...props}
-                      style={{
-                        ...props.style,
-                        height: '16px',
-                        width: '5px',
-                        backgroundColor: index < currentForckchoiceDumpIdx ? '#548BF4' : '#ccc'
-                      }}
-                    />
-                  )}
-                  min={0} max={Math.max(1, forckchoiceDumpArray.length - 1)}
-                  step={1}
-                  values={[currentForckchoiceDumpIdx]}
-                  onChange={handleSlide} />
-
+                    renderThumb={({ props, isDragged }) => (
+                      <div {...props} className={isDragged ? 'timeline-thumb dragged' : 'timeline-thumb'} style={props.style}>
+                        {forckchoiceDumpArray.length > 0 &&
+                          <div className="timeline-tip" title={forckchoiceDumpArray[currentForckchoiceDumpIdx]?.timestamp.local().format('YYYY-MM-DD HH:mm:ss Z')}>
+                            {forckchoiceDumpArray[currentForckchoiceDumpIdx]?.timestamp.local().format('HH:mm:ss')}
+                            <span className="timeline-tip-idx">{currentForckchoiceDumpIdx + 1}/{forckchoiceDumpArray.length}</span>
+                          </div>}
+                      </div>
+                    )}
+                    renderMark={({ props, index }) => (
+                      <div {...props} className={index < currentForckchoiceDumpIdx ? 'timeline-mark passed' : 'timeline-mark'} style={props.style} />
+                    )}
+                    min={0} max={Math.max(1, forckchoiceDumpArray.length - 1)}
+                    step={1}
+                    values={[currentForckchoiceDumpIdx]}
+                    onChange={handleSlide} />
+                </div>
+                <span className="timeline-time" title={forckchoiceDumpArray.length > 0 ? `latest snapshot: ${forckchoiceDumpArray[forckchoiceDumpArray.length - 1].timestamp.local().format('YYYY-MM-DD HH:mm:ss Z')}` : 'no snapshots yet'}>{forckchoiceDumpArray.length > 0 ? forckchoiceDumpArray[forckchoiceDumpArray.length - 1].timestamp.local().format('HH:mm:ss') : '--:--:--'}</span>
               </div>
-
-              <div className="importantText">{forckchoiceDumpArray?.length > 0 ? forckchoiceDumpArray[forckchoiceDumpArray.length - 1].timestamp.toLocaleString() : 'N/A'}</div>
             </div>
           </div>
         </div>

@@ -7,8 +7,9 @@ type Props = {
 
 type Position = { left: number; top: number }
 
-const DEFAULT_POSITION: Position = { left: 12, top: 60 }
+const DEFAULT_POSITION: Position = { left: 12, top: 200 }
 const STORAGE_KEY = 'protovis.ptcLegend.position'
+const FOLD_KEY = 'protovis.ptcLegend.folded'
 
 function loadPosition(): Position {
   try {
@@ -19,6 +20,10 @@ function loadPosition(): Position {
     }
   } catch (e) { /* no storage available, use the default */ }
   return DEFAULT_POSITION
+}
+
+function loadFolded(): boolean {
+  try { return localStorage.getItem(FOLD_KEY) === '1' } catch (e) { return false }
 }
 
 function clamp(position: Position, width: number, height: number): Position {
@@ -34,14 +39,25 @@ function Ring({ color, width }: { color: string; width: number }) {
 
 // Legend for the PTC vote rings drawn around Gloas FULL payload nodes. Drag it by its title
 // bar; the position is remembered in localStorage. Double-click the title to reset it.
+// The chevron folds it down to the title line once the colours are familiar.
 export default function PtcLegend({ ptcSize }: Props) {
   const [position, setPosition] = useState<Position>(loadPosition)
+  const [folded, setFolded] = useState<boolean>(loadFolded)
   const panel = useRef<HTMLDivElement>(null)
   const drag = useRef<{ startX: number; startY: number; origin: Position } | null>(null)
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(position)) } catch (e) { /* ignore */ }
   }, [position])
+
+  useEffect(() => {
+    try { localStorage.setItem(FOLD_KEY, folded ? '1' : '0') } catch (e) { /* ignore */ }
+  }, [folded])
+
+  const toggleFolded = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation()
+    setFolded(f => !f)
+  }, [])
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     drag.current = { startX: event.clientX, startY: event.clientY, origin: position }
@@ -76,12 +92,16 @@ export default function PtcLegend({ ptcSize }: Props) {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onDoubleClick={reset}>
-        🦫 payload PTC votes (of {ptcSize})
+        <span>🦫 payload PTC votes (of {ptcSize})</span>
+        <button className="ptc-legend-fold" onClick={toggleFolded} onPointerDown={e => e.stopPropagation()}
+          title={folded ? 'expand legend' : 'fold legend'} aria-expanded={!folded}>{folded ? '▸' : '▾'}</button>
       </div>
-      <div><Ring color={PTC_COLORS.yes} width={3} /> voted payload present</div>
-      <div><Ring color={PTC_COLORS.votedNotYes} width={3} /> voted payload absent</div>
-      <div><Ring color={PTC_COLORS.notVoted} width={3} /> no vote received</div>
-      <div><Ring color={PTC_COLORS.dataYes} width={2} /> inner ring: voted blob data available</div>
+      {!folded && <>
+        <div><Ring color={PTC_COLORS.yes} width={3} /> voted payload present</div>
+        <div><Ring color={PTC_COLORS.votedNotYes} width={3} /> voted payload absent</div>
+        <div><Ring color={PTC_COLORS.notVoted} width={3} /> no vote received</div>
+        <div><Ring color={PTC_COLORS.dataYes} width={2} /> inner ring: voted blob data available</div>
+      </>}
     </div>
   )
 }

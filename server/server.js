@@ -54,12 +54,14 @@ app.use(morgan('common'))
 // Have Node serve the files for our built React app
 app.use(express.static(path.resolve(__dirname, '../build')));
 
-// route API if endpoint is defined
+// proxy the standard Beacon API (/eth/*) to the configured node base URL, if defined.
+// The frontend can then be pointed at this server's own origin (empty "Beacon node URL").
 if (PROTO_ENDPOINT) {
-  app.get("/data", (req, res) => {
-    req.pipe(request(PROTO_ENDPOINT)).pipe(res);
+  const beaconBaseUrl = PROTO_ENDPOINT.replace(/\/+$/, '')
+  app.get("/eth/*", (req, res) => {
+    req.pipe(request(beaconBaseUrl + req.url)).pipe(res);
   });
-  console.log(`redirecting /data to ${PROTO_ENDPOINT}`)
+  console.log(`proxying /eth/* to ${beaconBaseUrl}/eth/*`)
 }
 
 // All other GET requests not handled before will return our React app

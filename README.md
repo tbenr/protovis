@@ -73,6 +73,26 @@ This section has moved here: [https://facebook.github.io/create-react-app/docs/d
 
 This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
 
+## Connecting to a node
+
+Settings → "Beacon node URL" takes the base URL of any node exposing the standard
+[Beacon API](https://github.com/ethereum/beacon-APIs), e.g. `http://localhost:5051`.
+Fork choice data is read from `/eth/v1/debug/fork_choice`.
+
+With Network set to **Auto** (the default) the genesis time and slot duration are read from
+the node (`/eth/v1/beacon/genesis` and `/eth/v1/config/spec`) whenever the settings are
+applied or polling is started.
+
+The browser talks to the node directly, so the node must allow cross-origin requests
+(e.g. Teku: `--rest-api-cors-origins="http://localhost:3000"`). Alternatively run the
+`server/` app: it serves the production build and proxies `/eth/*` to the node given in
+`PROTO_ENDPOINT`; leave "Beacon node URL" empty to use it.
+
+```
+cd server && yarn install
+PORT=8080 PROTO_ENDPOINT=http://localhost:5051 node server.js
+```
+
 ## Docker
 
 ```

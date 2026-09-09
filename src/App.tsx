@@ -15,11 +15,13 @@ import 'highlight.js/styles/default.css'
 import 'vis-network/styles/vis-network.min.css'
 
 import testData from './testData.json'
+import { fetchNodeParams, forkChoiceUrl, normalizeBaseUrl } from './beaconApi'
+import ErrorPanel, { ActiveErrors } from './ErrorPanel'
 
 const SLOT_WIDTH: number = 150
 const SLOT_HALF_WIDTH: number = SLOT_WIDTH / 2
 const SLOT_PER_EPOCH: number = 32
-const SECONDS_PER_SLOT: number = 12
+const DEFAULT_SECONDS_PER_SLOT: number = 12
 
 const FAR_FUTURE_SLOT = '18446744073709551615'
 
@@ -28,7 +30,7 @@ const GOERLI_GENESIS_TIME: number = 1616508000
 const SEPOLIA_GENESIS_TIME: number = 1655733600
 
 const DEFAULT_POLLING_PERIOD: number = 6000
-const DEFAULT_ENDPOINT: string = 'http://localhost:5051/eth/v1/debug/fork_choice'
+const DEFAULT_ENDPOINT: string = 'http://localhost:5051'
 const DEFAULT_POLL_MAX_HISTORY: number = 50
 
 const pollActiveAtStartup: boolean = false
@@ -41,6 +43,7 @@ enum SourceType {
 }
 
 enum NetworkType {
+  auto = 'Auto (read from node)',
   mainnet = 'Mainnet',
   goerli = 'Goerli',
   sepolia = 'Sepolia',
@@ -95,7 +98,7 @@ type IdToNetworkNode = {
 
 const DEFAULT_NODE_SIZE_MODE: NodeSizeMode = NodeSizeMode.rootToHeadsCumulated
 const DEFAULT_SOURCE_TYPE: SourceType = SourceType.standard
-const DEFAULT_NETWORK_TYPE: NetworkType = NetworkType.mainnet
+const DEFAULT_NETWORK_TYPE: NetworkType = NetworkType.auto
 const DEFAULT_GENESIS_TIME = MAINNET_GENESIS_TIME
 const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
 const DEFAULT_PHYSICS: boolean = true
@@ -156,12 +159,12 @@ function createMissingSlotNode(slot: number, parent: NetworkNode, child: Network
   }
 }
 
-function timestampToSlot(genesisTime: number, timestamp: number) {
-  return (+timestamp - genesisTime) / SECONDS_PER_SLOT;
+function timestampToSlot(genesisTime: number, secondsPerSlot: number, timestamp: number) {
+  return (+timestamp - genesisTime) / secondsPerSlot;
 }
 
-function slotToTimestamp(genesisTime: number, slot: number) {
-  return +genesisTime + (slot * SECONDS_PER_SLOT)
+function slotToTimestamp(genesisTime: number, secondsPerSlot: number, slot: number) {
+  return +genesisTime + (slot * secondsPerSlot)
 }
 
 /**
@@ -324,6 +327,7 @@ function calculateCumulativeToHeadWeights(root: ExistingNetworkNode): ExistingNe
 
 function forkchoiceNodesToNetworkData(
   genesisTime: number,
+  secondsPerSlot: number,
   forckchoiceNodes,
   sourceType: SourceType,
   nodeSizeMode: NodeSizeMode,
@@ -417,7 +421,7 @@ function forkchoiceNodesToNetworkData(
     // calculate late nodes
     let timestamp = node.forkchoiceNode?.extra_data?.timestamp as number
     if (timestamp) {
-      let receivedAtSlot = timestampToSlot(genesisTime,timestamp) - node.forkchoiceNode.slot
+      let receivedAtSlot = timestampToSlot(genesisTime, secondsPerSlot, timestamp) - node.forkchoiceNode.slot
       if(receivedAtSlot >= 1) {
         node.isLate = true;
         lateNodes = [...lateNodes, node]
@@ -459,7 +463,20 @@ function forkchoiceNodesToNetworkData(
 }
 
 function App() {
-  const [globalError, setGlobalError] = useState<string | undefined>();
+  const [activeErrors, setActiveErrors] = useState<ActiveErrors>({})
+
+  const reportError = useCallback((source: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error)
+    setActiveErrors(errors => errors[source] === message ? errors : { ...errors, [source]: message })
+  }, [setActiveErrors])
+
+  const clearError = useCallback((source: string) => {
+    setActiveErrors(errors => {
+      if (!(source in errors)) return errors
+      const { [source]: _removed, ...rest } = errors
+      return rest
+    })
+  }, [setActiveErrors])
 
   const [showSettings, setShowSettings] = useState<boolean>(false)
 
@@ -491,6 +508,8 @@ function App() {
   const [physics, setPhysics] = useState<boolean>(DEFAULT_PHYSICS)
   const [networkType, setNetworkType] = useState<NetworkType>(DEFAULT_NETWORK_TYPE)
   const [genesisTime, setGenesisTime] = useState<number>(DEFAULT_GENESIS_TIME)
+  const [secondsPerSlot, setSecondsPerSlot] = useState<number>(DEFAULT_SECONDS_PER_SLOT)
+  const [autoDetectStatus, setAutoDetectStatus] = useState<string>('')
 
   // settings edit
   const [protoArrayEndpointEdit, setProtoArrayEndpointEdit] = useState<string>(DEFAULT_ENDPOINT)
@@ -506,10 +525,38 @@ function App() {
 
   // poll protoarray endpoint
   const getProtoArray = useCallback(async () => {
-    const res = await fetch(protoArrayEndpoint)
-    const data = await res.json()
-    setFetchedForckchoiceDump(data)
-  }, [setFetchedForckchoiceDump, protoArrayEndpoint])
+    const url = forkChoiceUrl(protoArrayEndpoint)
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
+      const data = await res.json()
+      if (!Array.isArray(data?.fork_choice_nodes)) throw new Error(`no fork_choice_nodes in response from ${url}`)
+      setFetchedForckchoiceDump(data)
+      clearError('fork choice')
+    } catch (e) {
+      reportError('fork choice', e)
+    }
+  }, [setFetchedForckchoiceDump, protoArrayEndpoint, reportError, clearError])
+
+  // Auto network: read genesis time and slot duration from the connected node
+  const detectNodeParams = useCallback(async () => {
+    setAutoDetectStatus('detecting...')
+    try {
+      const params = await fetchNodeParams(protoArrayEndpoint)
+      setGenesisTime(params.genesisTime)
+      setGenesisTimeEdit(params.genesisTime)
+      setSecondsPerSlot(params.secondsPerSlot)
+      setAutoDetectStatus(`detected from ${protoArrayEndpoint || 'same origin'}`)
+      clearError('node parameters')
+    } catch (e) {
+      setAutoDetectStatus(`detection failed: ${e instanceof Error ? e.message : e}`)
+      reportError('node parameters', e)
+    }
+  }, [protoArrayEndpoint, setGenesisTime, setGenesisTimeEdit, setSecondsPerSlot, setAutoDetectStatus, reportError, clearError])
+
+  useEffect(() => {
+    if (networkType === NetworkType.auto) detectNodeParams()
+  }, [networkType, detectNodeParams])
 
   // save history
   useEffect(() => {
@@ -547,16 +594,18 @@ function App() {
     try {
       if (forckchoiceDumpArray.length === 0 || currentForckchoiceDumpIdx >= forckchoiceDumpArray.length) return
 
-      const { firstPOSNode, roots, heads, lateNodes, networkData } = forkchoiceNodesToNetworkData(genesisTime, forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
+      const { firstPOSNode, roots, heads, lateNodes, networkData } = forkchoiceNodesToNetworkData(genesisTime, secondsPerSlot, forckchoiceDumpArray[currentForckchoiceDumpIdx].forkchoiceNodes, sourceType, nodeSizeMode, drawMissingSlotNodes)
       setHeads(heads)
       setLateNodes(lateNodes)
       setRoots(roots)
       setFirstPOSNode(firstPOSNode)
       setData(networkData as any)
+      clearError('data')
     } catch (e) {
-      setGlobalError("error loading data - verify source type in settings (" + e + ")");
+      reportError('data', `error loading data - verify source type in settings (${e})`)
     }
   }, [genesisTime,
+    secondsPerSlot,
     currentForckchoiceDumpIdx,
     forckchoiceDumpArray,
     sourceType,
@@ -567,7 +616,8 @@ function App() {
     setLateNodes,
      setRoots, 
      setFirstPOSNode, 
-     setGlobalError])
+     reportError,
+     clearError])
 
   // poll
   const togglePoll = useCallback((pollIsActive) => {
@@ -578,12 +628,13 @@ function App() {
       return
     }
     if (pollIsActive && !pollTimer) {
+      if (networkType === NetworkType.auto) detectNodeParams()
       getProtoArray()
       let timer = setInterval(getProtoArray, pollPeriod)
 
       setPollTimer(timer)
     }
-  }, [getProtoArray, setPollTimer, setPoll, pollTimer, pollPeriod])
+  }, [getProtoArray, detectNodeParams, networkType, setPollTimer, setPoll, pollTimer, pollPeriod])
 
   useEffect(() => {
     if (pollActiveAtStartup) {
@@ -626,7 +677,9 @@ function App() {
 
   const handleCloseSettings = useCallback(() => {
     setShowSettings(false)
-    setProtoArrayEndpoint(protoArrayEndpointEdit)
+    const endpoint = normalizeBaseUrl(protoArrayEndpointEdit)
+    setProtoArrayEndpointEdit(endpoint)
+    setProtoArrayEndpoint(endpoint)
     setPollPeriod(pollPeriodEdit)
     setPollMaxHistory(pollMaxHistoryEdit)
     setSourceType(sourceTypeEdit)
@@ -634,7 +687,14 @@ function App() {
     setDrawMissingSlotNodes(drawMissingSlotNodesEdit)
     setPhysics(physicsEdit)
     setNetworkType(networkTypeEdit)
-    setGenesisTime(genesisTimeEdit)
+    if (networkTypeEdit === NetworkType.auto) {
+      // the detection effect re-runs when endpoint or network type changed; force it otherwise
+      if (endpoint === protoArrayEndpoint && networkType === NetworkType.auto) detectNodeParams()
+    } else {
+      setGenesisTime(genesisTimeEdit)
+      setSecondsPerSlot(DEFAULT_SECONDS_PER_SLOT)
+      setAutoDetectStatus('')
+    }
 
     if (poll) {
       clearInterval(pollTimer)
@@ -644,6 +704,9 @@ function App() {
 
   }, [setShowSettings,
     getProtoArray,
+    detectNodeParams,
+    protoArrayEndpoint,
+    networkType,
     sourceTypeEdit,
     pollTimer,
     poll,
@@ -661,7 +724,10 @@ function App() {
     setPhysics,
     setDrawMissingSlotNodes,
     setNetworkType,
-    setGenesisTime])
+    setGenesisTime,
+    setSecondsPerSlot,
+    setAutoDetectStatus,
+    setProtoArrayEndpointEdit])
 
   const handleUpdateEndpoint = useCallback((event) => {
     setProtoArrayEndpointEdit(event.target.value)
@@ -1025,8 +1091,8 @@ function App() {
           ctx.beginPath()
           ctx.moveTo(nodePosition.x, nodePosition.y)
           let actualTimestamp = node.forkchoiceNode.extra_data.timestamp
-          let lateBySlot = timestampToSlot(genesisTime, actualTimestamp) - node.forkchoiceNode.slot
-          let expectedTimestamp = slotToTimestamp(genesisTime, node.forkchoiceNode.slot)
+          let lateBySlot = timestampToSlot(genesisTime, secondsPerSlot, actualTimestamp) - node.forkchoiceNode.slot
+          let expectedTimestamp = slotToTimestamp(genesisTime, secondsPerSlot, node.forkchoiceNode.slot)
           let newy = nodePosition.y + 100
           ctx.lineTo(nodePosition.x, newy)
           let newx = nodePosition.x + (lateBySlot * SLOT_WIDTH) - SLOT_HALF_WIDTH
@@ -1070,13 +1136,11 @@ function App() {
         })
       },
     }
-  }, [network, genesisTime,networkNodes, heads, lateNodes, roots, firstPOSNode])
+  }, [network, genesisTime, secondsPerSlot, networkNodes, heads, lateNodes, roots, firstPOSNode])
 
   return (
     <>
-      {globalError && <div><p>ASD: {globalError}</p>
-        <button onClick={() => { window.location.reload(); }}>reload</button></div>}
-      {!globalError &&
+      <ErrorPanel errors={activeErrors} />
         <div className="App">
           <Modal
             isOpen={showSettings}
@@ -1087,8 +1151,9 @@ function App() {
             <br></br>
             <br></br>
             <label>
-              Protoarray Endpoint:
-              <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} />
+              Beacon node URL:
+              <input type="text" style={{ width: '500px' }} value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} placeholder="http://localhost:5051" />
+              <span style={{ marginLeft: 8, opacity: 0.7 }}>(base URL of a standard Beacon API; fork choice is read from /eth/v1/debug/fork_choice)</span>
             </label>
             <br></br>
             <br></br>
@@ -1139,6 +1204,16 @@ function App() {
               <input disabled={networkTypeEdit !== NetworkType.custom} type="number" style={{ width: '100px' }} value={genesisTimeEdit} onChange={handleSetGenesisTime} />
               {`${moment(genesisTimeEdit * 1000).local()}`}
             </label>
+            {networkTypeEdit === NetworkType.auto &&
+              <>
+                <br></br>
+                <br></br>
+                <label>
+                  Seconds per slot: {secondsPerSlot}
+                  <span style={{ marginLeft: 16, opacity: 0.7 }}>{autoDetectStatus}</span>
+                </label>
+              </>
+            }
           </Modal>
           <div className="main">
             <div className="header">
@@ -1322,7 +1397,6 @@ function App() {
             </div>
           </div>
         </div>
-      }
     </>
   )
 }

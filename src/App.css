@@ -36,3 +36,37 @@
     transform: rotate(360deg);
   }
 }
+
+.error-panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  max-width: 420px;
+  background: #3b1d1d;
+  color: #ffd7d7;
+  border: 1px solid #b84a4a;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  text-align: left;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.error-panel-entry + .error-panel-entry {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #6e3434;
+}
+
+.error-panel-source {
+  font-weight: bold;
+  margin-right: 8px;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #ff9c9c;
+}
+
+.error-panel-message {
+  word-break: break-word;
+}

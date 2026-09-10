@@ -26,7 +26,7 @@ const SLOT_WIDTH: number = 150
 // slots (~15M) times the level separation exceed the ~16M precision limit of canvas floats and
 // render as jagged shapes. The anchor is a coarse multiple so it rarely moves between polls.
 const LEVEL_ANCHOR_GRANULARITY: number = 2048
-const SLOT_PER_EPOCH: number = 32
+const DEFAULT_SLOTS_PER_EPOCH: number = 32
 const DEFAULT_SECONDS_PER_SLOT: number = 12
 
 const FAR_FUTURE_SLOT = '18446744073709551615'
@@ -627,6 +627,7 @@ function App() {
   const [networkType, setNetworkType] = useState<NetworkType>(INITIAL_NETWORK_TYPE)
   const [genesisTime, setGenesisTime] = useState<number>(INITIAL_GENESIS_TIME)
   const [secondsPerSlot, setSecondsPerSlot] = useState<number>(DEFAULT_SECONDS_PER_SLOT)
+  const [slotsPerEpoch, setSlotsPerEpoch] = useState<number>(DEFAULT_SLOTS_PER_EPOCH)
   const [ptcSize, setPtcSize] = useState<number>(DEFAULT_PTC_SIZE)
   const [autoDetectStatus, setAutoDetectStatus] = useState<string>('')
 
@@ -641,6 +642,9 @@ function App() {
   const [physicsEdit, setPhysicsEdit] = useState<boolean>(DEFAULT_PHYSICS)
   const [networkTypeEdit, setNetworkTypeEdit] = useState<NetworkType>(INITIAL_NETWORK_TYPE)
   const [genesisTimeEdit, setGenesisTimeEdit] = useState<number>(INITIAL_GENESIS_TIME)
+  const [secondsPerSlotEdit, setSecondsPerSlotEdit] = useState<number>(DEFAULT_SECONDS_PER_SLOT)
+  const [slotsPerEpochEdit, setSlotsPerEpochEdit] = useState<number>(DEFAULT_SLOTS_PER_EPOCH)
+  const [ptcSizeEdit, setPtcSizeEdit] = useState<number>(DEFAULT_PTC_SIZE)
 
   const inputFile = useRef<any>(null)
 
@@ -678,14 +682,18 @@ function App() {
       setGenesisTime(params.genesisTime)
       setGenesisTimeEdit(params.genesisTime)
       setSecondsPerSlot(params.secondsPerSlot)
+      setSlotsPerEpoch(params.slotsPerEpoch)
       setPtcSize(params.ptcSize ?? DEFAULT_PTC_SIZE)
+      setSecondsPerSlotEdit(params.secondsPerSlot)
+      setSlotsPerEpochEdit(params.slotsPerEpoch)
+      setPtcSizeEdit(params.ptcSize ?? DEFAULT_PTC_SIZE)
       setAutoDetectStatus(`detected from ${protoArrayEndpoint || 'same origin'}`)
       clearError('node parameters')
     } catch (e) {
       setAutoDetectStatus(`detection failed: ${e instanceof Error ? e.message : e}`)
       reportError('node parameters', e)
     }
-  }, [protoArrayEndpoint, setGenesisTime, setGenesisTimeEdit, setSecondsPerSlot, setPtcSize, setAutoDetectStatus, reportError, clearError])
+  }, [protoArrayEndpoint, setGenesisTime, setGenesisTimeEdit, setSecondsPerSlot, setSlotsPerEpoch, setPtcSize, setSecondsPerSlotEdit, setSlotsPerEpochEdit, setPtcSizeEdit, setAutoDetectStatus, reportError, clearError])
 
   useEffect(() => {
     if (networkType === NetworkType.auto) detectNodeParams()
@@ -837,8 +845,11 @@ function App() {
       if (endpoint === protoArrayEndpoint && networkType === NetworkType.auto) detectNodeParams()
     } else {
       setGenesisTime(genesisTimeEdit)
-      setSecondsPerSlot(DEFAULT_SECONDS_PER_SLOT)
-      setPtcSize(DEFAULT_PTC_SIZE)
+      const custom = networkTypeEdit === NetworkType.custom
+      const positive = (value: number, fallback: number) => Number.isFinite(value) && value > 0 ? value : fallback
+      setSecondsPerSlot(custom ? positive(Number(secondsPerSlotEdit), DEFAULT_SECONDS_PER_SLOT) : DEFAULT_SECONDS_PER_SLOT)
+      setSlotsPerEpoch(custom ? positive(Number(slotsPerEpochEdit), DEFAULT_SLOTS_PER_EPOCH) : DEFAULT_SLOTS_PER_EPOCH)
+      setPtcSize(custom ? positive(Number(ptcSizeEdit), DEFAULT_PTC_SIZE) : DEFAULT_PTC_SIZE)
       setAutoDetectStatus('')
     }
 
@@ -865,6 +876,9 @@ function App() {
     physicsEdit,
     networkTypeEdit,
     genesisTimeEdit,
+    secondsPerSlotEdit,
+    slotsPerEpochEdit,
+    ptcSizeEdit,
     setProtoArrayEndpoint,
     setPollPeriod,
     setPollMaxHistory,
@@ -876,6 +890,7 @@ function App() {
     setNetworkType,
     setGenesisTime,
     setSecondsPerSlot,
+    setSlotsPerEpoch,
     setPtcSize,
     setAutoDetectStatus,
     setProtoArrayEndpointEdit])
@@ -916,6 +931,18 @@ function App() {
     setGenesisTimeEdit(event.target.value)
   }, [setGenesisTimeEdit])
 
+  const handleSetSecondsPerSlot = useCallback((event) => {
+    setSecondsPerSlotEdit(Number(event.target.value))
+  }, [setSecondsPerSlotEdit])
+
+  const handleSetSlotsPerEpoch = useCallback((event) => {
+    setSlotsPerEpochEdit(Number(event.target.value))
+  }, [setSlotsPerEpochEdit])
+
+  const handleSetPtcSize = useCallback((event) => {
+    setPtcSizeEdit(Number(event.target.value))
+  }, [setPtcSizeEdit])
+
   const handleSetNetworkType = useCallback((type: Option) => {
     let network: NetworkType = type.value as NetworkType
 
@@ -931,7 +958,12 @@ function App() {
         setGenesisTimeEdit(SEPOLIA_GENESIS_TIME)
         break;
     }
-  }, [setNetworkTypeEdit, setGenesisTimeEdit])
+    if (network !== NetworkType.custom && network !== NetworkType.auto) {
+      setSecondsPerSlotEdit(DEFAULT_SECONDS_PER_SLOT)
+      setSlotsPerEpochEdit(DEFAULT_SLOTS_PER_EPOCH)
+      setPtcSizeEdit(DEFAULT_PTC_SIZE)
+    }
+  }, [setNetworkTypeEdit, setGenesisTimeEdit, setSecondsPerSlotEdit, setSlotsPerEpochEdit, setPtcSizeEdit])
 
   /*** head navigation callbacks **/
 
@@ -1136,6 +1168,22 @@ function App() {
     setForckchoiceDumpArray(data)
   }, [setForckchoiceDumpArray, selectSourceType])
 
+  // the Samples menu is a native <details>: close it on outside click, Escape, or after picking an item
+  const samplesMenu = useRef<HTMLDetailsElement>(null)
+  const closeSamplesMenu = useCallback(() => { if (samplesMenu.current) samplesMenu.current.open = false }, [])
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (samplesMenu.current?.open && !samplesMenu.current.contains(event.target as Node)) closeSamplesMenu()
+    }
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') closeSamplesMenu() }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [closeSamplesMenu])
+
   // ?sample=gloas|teku: load a bundled dump once on start (the network parameter is applied as initial state above)
   const sampleParamHandled = useRef(false)
   useEffect(() => {
@@ -1209,11 +1257,11 @@ function App() {
           if (head.slot > maxSlot) maxSlot = head.slot
         })
 
-        const minEpoch: number = Math.floor(minSlot / SLOT_PER_EPOCH)
-        const maxEpoch: number = Math.floor(maxSlot / SLOT_PER_EPOCH)
+        const minEpoch: number = Math.floor(minSlot / slotsPerEpoch)
+        const maxEpoch: number = Math.floor(maxSlot / slotsPerEpoch)
         const leftMostNodeSlot: number = minSlot
-        minSlot = minEpoch * SLOT_PER_EPOCH
-        maxSlot = maxEpoch * SLOT_PER_EPOCH + SLOT_PER_EPOCH - 1
+        minSlot = minEpoch * slotsPerEpoch
+        maxSlot = maxEpoch * slotsPerEpoch + slotsPerEpoch - 1
 
         const leftMostPosition = network.getPosition(leftMostNode.id)
         // with Gloas payload nodes present, block nodes sit on the left half of their slot column
@@ -1229,7 +1277,7 @@ function App() {
         const colorA = "#FFFFFF"
         const colorB = "#CCFFFF"
         const minEpochStartOffset = leftMostPosition.x + blockOffset - slotHalfWidth + ((minSlot - leftMostNodeSlot) * slotWidth)
-        const epochWidth = SLOT_PER_EPOCH * slotWidth
+        const epochWidth = slotsPerEpoch * slotWidth
 
         let beginEpochPos = minEpochStartOffset
         ctx.font = "30px Georgia"
@@ -1248,7 +1296,7 @@ function App() {
         // slot grid
         ctx.font = "20px Georgia"
         for (let slot: number = minSlot; slot <= maxSlot; slot++) {
-          const slotLabel = slot + " (" + slot % SLOT_PER_EPOCH + ")"
+          const slotLabel = slot + " (" + slot % slotsPerEpoch + ")"
           let slotDiff: number = slot - leftMostNodeSlot
           ctx.beginPath()
           let slotCenter = slotDiff * slotWidth + leftMostPosition.x + blockOffset
@@ -1324,7 +1372,7 @@ function App() {
         })
       },
     }
-  }, [network, genesisTime, secondsPerSlot, networkNodes, heads, lateNodes, roots, firstPOSNode, payloadColumns, slotWidth, slotHalfWidth])
+  }, [network, genesisTime, secondsPerSlot, slotsPerEpoch, networkNodes, heads, lateNodes, roots, firstPOSNode, payloadColumns, slotWidth, slotHalfWidth])
 
   const forkChoiceError = activeErrors['fork choice']
   const connectionState: 'connected' | 'error' | 'idle' = forkChoiceError ? 'error' : (lastFetchAt ? 'connected' : 'idle')
@@ -1335,7 +1383,7 @@ function App() {
     `polling: ${poll ? `every ${pollPeriod / 1000}s` : 'off'}`,
     `network: ${networkType}`,
     `genesis: ${moment(genesisTime * 1000).local().format('YYYY-MM-DD HH:mm:ss Z')}`,
-    `slot: ${secondsPerSlot}s · PTC size: ${ptcSize}`,
+    `slot: ${secondsPerSlot}s · ${slotsPerEpoch} slots/epoch · PTC size: ${ptcSize}`,
     ...(forkChoiceError ? [`error: ${forkChoiceError}`] : []),
   ].join('\n')
 
@@ -1396,7 +1444,7 @@ function App() {
                   </select>
                   {networkTypeEdit === NetworkType.auto &&
                     <div className="settings-hint">
-                      Genesis time, slot duration and PTC size are read from the node whenever settings are applied or polling starts.
+                      Genesis time, slot duration, slots per epoch and PTC size are read from the node whenever settings are applied or polling starts.
                       {autoDetectStatus && <span className={autoDetectStatus.startsWith('detection failed') ? 'settings-status settings-status-bad' : 'settings-status'}> {autoDetectStatus}</span>}
                     </div>}
                 </div>
@@ -1409,12 +1457,14 @@ function App() {
                 </div>
               </div>
               <div className="settings-row">
-                <span className="settings-label">Slot</span>
+                <label className="settings-label" htmlFor="s-spslot">Slot</label>
                 <div className="settings-control settings-inline">
-                  <span className="settings-value">{secondsPerSlot}s</span>
-                  <span className="settings-unit">per slot</span>
+                  <input id="s-spslot" className="settings-input settings-input-num settings-input-small" disabled={networkTypeEdit !== NetworkType.custom} type="number" min="1" value={networkTypeEdit === NetworkType.custom ? secondsPerSlotEdit : secondsPerSlot} onChange={handleSetSecondsPerSlot} />
+                  <span className="settings-unit">s per slot</span>
+                  <input id="s-spepoch" className="settings-input settings-input-num settings-input-small" disabled={networkTypeEdit !== NetworkType.custom} type="number" min="1" value={networkTypeEdit === NetworkType.custom ? slotsPerEpochEdit : slotsPerEpoch} onChange={handleSetSlotsPerEpoch} />
+                  <span className="settings-unit">per epoch</span>
                   <span className="settings-label settings-label-inline">PTC size</span>
-                  <span className="settings-value">{ptcSize}</span>
+                  <input id="s-ptc" className="settings-input settings-input-num settings-input-small" disabled={networkTypeEdit !== NetworkType.custom} type="number" min="1" value={networkTypeEdit === NetworkType.custom ? ptcSizeEdit : ptcSize} onChange={handleSetPtcSize} />
                 </div>
               </div>
             </section>
@@ -1455,11 +1505,11 @@ function App() {
                   <button className="tb-btn" onClick={handleShowSettings} title="settings">⚙ Settings</button>
                   <button className="tb-btn" onClick={handleImportData} title="import a fork choice dump">⇧ Import</button>
                   <button className="tb-btn" onClick={handleExportData} title="export the current history">⇩ Export</button>
-                  <details className="tb-menu">
+                  <details className="tb-menu" ref={samplesMenu}>
                     <summary className="tb-btn" title="bundled sample data">⚗ Samples ▾</summary>
                     <div className="tb-menu-items">
-                      <button className="tb-btn" onClick={handleLoadTestData} title="legacy Teku dump; switches source type to Teku">Legacy Teku dump</button>
-                      <button className="tb-btn" onClick={handleLoadGloasTestData} title="synthetic Gloas v2 dump; switches source type to Standard">Synthetic Gloas dump</button>
+                      <button className="tb-btn" onClick={() => { closeSamplesMenu(); handleLoadTestData() }} title="legacy Teku dump; switches source type to Teku">Legacy Teku dump</button>
+                      <button className="tb-btn" onClick={() => { closeSamplesMenu(); handleLoadGloasTestData() }} title="synthetic Gloas v2 dump; switches source type to Standard">Synthetic Gloas dump</button>
                     </div>
                   </details>
                 </div>
@@ -1496,7 +1546,7 @@ function App() {
                     {Object.values(NodeSizeMode).map(mode => <option key={mode} value={mode}>{mode}</option>)}
                   </select>
                 </div>
-                {heads.length > 0 && <span className="tb-chip" title="epoch of the canonical head">epoch {Math.floor(heads[0].slot / SLOT_PER_EPOCH)}</span>}
+                {heads.length > 0 && <span className="tb-chip" title="epoch of the canonical head">epoch {Math.floor(heads[0].slot / slotsPerEpoch)}</span>}
                 <span className={`tb-chip tb-conn ${connectionState}`} title={connectionTooltip}>
                   {connectionState === 'connected' && `● connected · ${forkChoiceApiVersionLabel}`}
                   {connectionState === 'error' && '● node error'}
@@ -1511,7 +1561,7 @@ function App() {
               <VisNetworkReactComponent
                 data={data}
                 options={{
-                  height: '95%',
+                  height: '100%',
                   layout: {
                     randomSeed: 2,
                     hierarchical: {

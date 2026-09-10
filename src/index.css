@@ -16,7 +16,7 @@ html, body, #root, .App {
 }
 
 .header, .footer {
-  flex-grow: 1;
+  flex: 0 0 auto;
 }
 
 .footer {
@@ -39,7 +39,10 @@ html, body, #root, .App {
 }
 
 .network {
-  flex-grow: 2;
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  background: #1e1e1e;
 }
 
 body {

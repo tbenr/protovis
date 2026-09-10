@@ -196,20 +196,33 @@
 }
 
 /* three anchored regions: left (data), center (head navigation, over the canvas), right (view) */
+/* narrow screens: regions dissolve into the toolbar's own wrapping flow, so groups pack row by row */
 .tb-region {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 0;
-  min-width: max-content;
+  display: contents;
 }
 
-.tb-center {
-  justify-content: center;
-}
+/* wide screens: three columns with head navigation centered over the canvas */
+@media (min-width: 1400px) {
+  .toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+  }
 
-.tb-right {
-  justify-content: flex-end;
+  .tb-region {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .tb-center {
+    justify-content: center;
+  }
+
+  .tb-right {
+    justify-content: flex-end;
+  }
 }
 
 .tb-mono {
@@ -292,6 +305,10 @@
   padding: 4px 10px;
   align-items: center;
   gap: 16px;
+  box-sizing: border-box; /* width: 100% plus padding must not overflow the window */
+  min-width: 0;
+  position: relative;
+  z-index: 5; /* the thumb tooltip rises above the footer, over the graph */
 }
 
 .tb-switch {
@@ -350,7 +367,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  min-width: 320px;
+  min-width: 0;
 }
 
 .timeline-time {
@@ -362,6 +379,7 @@
 
 .timeline-slider {
   flex: 1;
+  min-width: 120px;
   padding: 0 8px;
 }
 

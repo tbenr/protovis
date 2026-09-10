@@ -6,6 +6,7 @@
 export type NodeParams = {
   genesisTime: number
   secondsPerSlot: number
+  slotsPerEpoch: number
   ptcSize?: number // Gloas Payload Timeliness Committee size, absent on pre-Gloas specs
 }
 
@@ -51,6 +52,7 @@ export async function fetchNodeParams(base: string, fetchFn: FetchLike = fetch):
   return {
     genesisTime: requirePositiveNumber(genesis?.data?.genesis_time, 'genesis_time', 'genesis'),
     secondsPerSlot: requirePositiveNumber(spec?.data?.SECONDS_PER_SLOT, 'SECONDS_PER_SLOT', 'spec'),
+    slotsPerEpoch: requirePositiveNumber(spec?.data?.SLOTS_PER_EPOCH, 'SLOTS_PER_EPOCH', 'spec'),
     ...(Number.isFinite(ptcSize) && ptcSize > 0 ? { ptcSize } : {}),
   }
 }

@@ -36,7 +36,7 @@ Fork choice is read from `/eth/v2/debug/fork_choice` when the node supports it
 `/eth/v1/debug/fork_choice` otherwise. Both the plain and the `data`-wrapped response shapes are
 accepted.
 
-With Network set to **Auto** (the default) the genesis time, slot duration and PTC size are
+With Network set to **Auto** (the default) the genesis time, slot duration, slots per epoch and PTC size are
 read from the node (`/eth/v1/beacon/genesis` and `/eth/v1/config/spec`) whenever the settings
 are applied or polling is started.
 

@@ -34,25 +34,26 @@ describe('fetchNodeParams', () => {
   it('reads genesis time and seconds per slot from the node', async () => {
     const fetch = mockFetch({
       'http://node:5051/eth/v1/beacon/genesis': { data: { genesis_time: '1700000000' } },
-      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '6' } },
+      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '6', SLOTS_PER_EPOCH: '8' } },
     })
     await expect(fetchNodeParams('http://node:5051/', fetch)).resolves.toEqual({
       genesisTime: 1700000000,
       secondsPerSlot: 6,
+      slotsPerEpoch: 8,
     })
   })
 
   it('reads the PTC size when the spec has it', async () => {
     const fetch = mockFetch({
       'http://node:5051/eth/v1/beacon/genesis': { data: { genesis_time: '1700000000' } },
-      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '6', PTC_SIZE: '16' } },
+      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '6', SLOTS_PER_EPOCH: '8', PTC_SIZE: '16' } },
     })
     await expect(fetchNodeParams('http://node:5051', fetch)).resolves.toMatchObject({ ptcSize: 16 })
   })
 
   it('throws a descriptive error when a request fails', async () => {
     const fetch = mockFetch({
-      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '12' } },
+      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '12', SLOTS_PER_EPOCH: '32' } },
     })
     await expect(fetchNodeParams('http://node:5051', fetch)).rejects.toThrow(/genesis.*404/)
   })
@@ -60,7 +61,7 @@ describe('fetchNodeParams', () => {
   it('throws when the response lacks the expected fields', async () => {
     const fetch = mockFetch({
       'http://node:5051/eth/v1/beacon/genesis': { data: {} },
-      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '12' } },
+      'http://node:5051/eth/v1/config/spec': { data: { SECONDS_PER_SLOT: '12', SLOTS_PER_EPOCH: '32' } },
     })
     await expect(fetchNodeParams('http://node:5051', fetch)).rejects.toThrow(/genesis_time/)
   })

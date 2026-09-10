@@ -1,20 +1,24 @@
-# Use the official Node.js lts image as a parent image
-FROM node:lts
+# Stage 1: build the frontend from the tracked yarn.lock
+FROM node:lts AS build
+WORKDIR /app
+RUN corepack enable
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+COPY tsconfig.json ./
+COPY public ./public
+COPY src ./src
+RUN yarn build
 
-# Set the working directory inside the container
-WORKDIR /usr/src/app
-
-# Copy package.json and package-lock.json (if available) to the working directory
-COPY package*.json ./
-
-# Install any dependencies
-RUN npm install
-
-# Copy the rest of your app's source code from your host to your image filesystem.
-COPY . .
-
-# Your app binds to port 3000 so you'll use the EXPOSE instruction to have it mapped by the docker daemon
+# Stage 2: serve the build with the bundled Express server.
+# Set PROTO_ENDPOINT to a beacon node base URL to enable the /eth/* proxy (the app then
+# connects through this server automatically); leave it unset to enter a node URL in the UI.
+FROM node:lts-slim
+WORKDIR /app
+RUN corepack enable
+COPY server/package.json server/yarn.lock ./server/
+RUN cd server && yarn install --frozen-lockfile --production
+COPY server/server.js ./server/
+COPY --from=build /app/build ./build
+ENV PORT=3000
 EXPOSE 3000
-
-# Define the command to run your app using CMD which defines your runtime
-CMD [ "npm", "start" ]
+CMD ["node", "server/server.js"]

@@ -54,15 +54,32 @@ app.use(morgan('common'))
 // Have Node serve the files for our built React app
 app.use(express.static(path.resolve(__dirname, '../build')));
 
-// proxy the standard Beacon API (/eth/*) to the configured node base URL, if defined.
+// Proxy to the configured node base URL, if defined. Only the read-only endpoints the frontend
+// actually uses are forwarded (GET, no query string), so the node's full API is not exposed.
 // The frontend can then be pointed at this server's own origin (empty "Beacon node URL").
+const PROXIED_PATHS = [
+  '/eth/v1/beacon/genesis',
+  '/eth/v1/config/spec',
+  '/eth/v1/debug/fork_choice',
+  '/eth/v2/debug/fork_choice',
+]
 if (PROTO_ENDPOINT) {
   const beaconBaseUrl = PROTO_ENDPOINT.replace(/\/+$/, '')
-  app.get("/eth/*", (req, res) => {
-    req.pipe(request(beaconBaseUrl + req.url)).pipe(res);
+  for (const path of PROXIED_PATHS) {
+    app.get(path, (req, res) => {
+      req.pipe(request({ url: beaconBaseUrl + path, headers: { accept: 'application/json' } })).pipe(res);
+    });
+  }
+  app.all("/eth/*", (req, res) => {
+    res.status(404).json({ code: 404, message: 'not proxied' })
   });
-  console.log(`proxying /eth/* to ${beaconBaseUrl}/eth/*`)
+  console.log(`proxying ${PROXIED_PATHS.join(', ')} to ${beaconBaseUrl}`)
 }
+
+// tells the frontend whether this server proxies a beacon node, so it can default to its own origin
+app.get("/config", (req, res) => {
+  res.json({ beaconProxy: !!PROTO_ENDPOINT })
+});
 
 // All other GET requests not handled before will return our React app
 app.get('*', (req, res) => {

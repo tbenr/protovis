@@ -15,7 +15,7 @@ import 'vis-network/styles/vis-network.min.css'
 
 import testData from './testData.json'
 import testDataGloas from './testDataGloas.json'
-import { fetchNodeParams, normalizeBaseUrl } from './beaconApi'
+import { fetchNodeParams, normalizeBaseUrl, diagnoseFetchFailure } from './beaconApi'
 import { fetchForkChoice, forkChoiceNodeKey, resolveParentKey, isV2Node, ptcVoteFractions, ForkChoiceApiVersion, PayloadStatus } from './forkChoiceApi'
 import { makePtcNodeRenderer, makeEmptyNodeRenderer } from './ptcNode'
 import PtcLegend from './PtcLegend'
@@ -664,7 +664,7 @@ function App() {
       setFetchedForckchoiceDump(data)
       clearError('fork choice')
     } catch (e) {
-      reportError('fork choice', e)
+      reportError('fork choice', (await diagnoseFetchFailure(protoArrayEndpoint, e)).message)
     }
   }, [setFetchedForckchoiceDump, protoArrayEndpoint, reportError, clearError])
 
@@ -690,14 +690,37 @@ function App() {
       setAutoDetectStatus(`detected from ${protoArrayEndpoint || 'same origin'}`)
       clearError('node parameters')
     } catch (e) {
-      setAutoDetectStatus(`detection failed: ${e instanceof Error ? e.message : e}`)
-      reportError('node parameters', e)
+      const failure = await diagnoseFetchFailure(protoArrayEndpoint, e)
+      setAutoDetectStatus(`detection failed: ${failure.message}`)
+      reportError('node parameters', failure.message)
     }
   }, [protoArrayEndpoint, setGenesisTime, setGenesisTimeEdit, setSecondsPerSlot, setSlotsPerEpoch, setPtcSize, setSecondsPerSlotEdit, setSlotsPerEpochEdit, setPtcSizeEdit, setAutoDetectStatus, reportError, clearError])
 
+  // On start, ask the origin whether it is the bundled proxy (GET /config -> { beaconProxy: true }).
+  // If so, default the node URL to same-origin so the app is usable immediately. Detection waits
+  // for this answer so it does not first fail against the hardcoded default.
+  const [startupReady, setStartupReady] = useState<boolean>(false)
+  const [servedByProxy, setServedByProxy] = useState<boolean>(false)
   useEffect(() => {
-    if (networkType === NetworkType.auto) detectNodeParams()
-  }, [networkType, detectNodeParams])
+    let cancelled = false
+    const finish = () => { if (!cancelled) setStartupReady(true) }
+    fetch('/config', { cache: 'no-store' })
+      .then(res => res.ok ? res.json() : null)
+      .then(config => {
+        if (!cancelled && config && config.beaconProxy === true) {
+          setServedByProxy(true)
+          setProtoArrayEndpoint('')
+          setProtoArrayEndpointEdit('')
+        }
+      })
+      .catch(() => undefined)
+      .finally(finish)
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (startupReady && networkType === NetworkType.auto) detectNodeParams()
+  }, [startupReady, networkType, detectNodeParams])
 
   // save history
   useEffect(() => {
@@ -895,9 +918,41 @@ function App() {
     setAutoDetectStatus,
     setProtoArrayEndpointEdit])
 
+  // Test the edited node URL without applying it: early feedback (reachable, parameters, or why not)
+  type EndpointTest = { state: 'idle' | 'testing' | 'ok' | 'fail'; message: string; url: string }
+  const [endpointTest, setEndpointTest] = useState<EndpointTest>({ state: 'idle', message: '', url: '' })
   const handleUpdateEndpoint = useCallback((event) => {
     setProtoArrayEndpointEdit(event.target.value)
+    setEndpointTest({ state: 'idle', message: '', url: '' })
   }, [setProtoArrayEndpointEdit])
+
+  const testEndpoint = useCallback(async () => {
+    const url = normalizeBaseUrl(protoArrayEndpointEdit)
+    setEndpointTest({ state: 'testing', message: 'testing…', url })
+    try {
+      const params = await fetchNodeParams(url)
+      if (networkTypeEdit === NetworkType.auto) {
+        // Auto: the dialog reflects the tested node right away; Done applies it
+        setGenesisTimeEdit(params.genesisTime)
+        setSecondsPerSlotEdit(params.secondsPerSlot)
+        setSlotsPerEpochEdit(params.slotsPerEpoch)
+        setPtcSizeEdit(params.ptcSize ?? DEFAULT_PTC_SIZE)
+      }
+      const genesis = moment(params.genesisTime * 1000).local().format('YYYY-MM-DD HH:mm:ss Z')
+      setEndpointTest({ state: 'ok', url, message: `node OK · genesis ${genesis} · ${params.secondsPerSlot}s/slot · ${params.slotsPerEpoch} slots/epoch${params.ptcSize ? ` · PTC ${params.ptcSize}` : ' · no PTC (pre-Gloas spec)'}` })
+    } catch (e) {
+      const failure = await diagnoseFetchFailure(url, e)
+      setEndpointTest({ state: 'fail', url, message: failure.message })
+    }
+  }, [protoArrayEndpointEdit, networkTypeEdit])
+
+  // test on blur when the URL changed since the last test, and on Enter
+  const handleEndpointBlur = useCallback(() => {
+    if (endpointTest.state === 'idle' || normalizeBaseUrl(protoArrayEndpointEdit) !== endpointTest.url) testEndpoint()
+  }, [endpointTest, protoArrayEndpointEdit, testEndpoint])
+  const handleEndpointKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') { event.preventDefault(); testEndpoint() }
+  }, [testEndpoint])
 
   const handleSetPollingPeriod = useCallback((event) => {
     setPollPeriodEdit(event.target.value)
@@ -1409,8 +1464,19 @@ function App() {
               <div className="settings-row">
                 <label className="settings-label" htmlFor="s-url">Beacon node URL</label>
                 <div className="settings-control">
-                  <input id="s-url" className="settings-input settings-input-wide" type="text" value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} placeholder="http://localhost:5051" />
-                  <div className="settings-hint">Base URL of a standard Beacon API. Fork choice is read from /eth/v2/debug/fork_choice, falling back to v1. Leave empty when served through the bundled proxy.</div>
+                  <div className="settings-url">
+                    <input id="s-url" className="settings-input settings-input-wide" type="text" value={protoArrayEndpointEdit} onChange={handleUpdateEndpoint} onBlur={handleEndpointBlur} onKeyDown={handleEndpointKeyDown} placeholder={servedByProxy ? `same origin (${window.location.origin} proxies a beacon node)` : 'http://localhost:5051'} />
+                    <button type="button" className="settings-test" onClick={testEndpoint} disabled={endpointTest.state === 'testing'} title="fetch genesis and spec from this URL without applying it">{endpointTest.state === 'testing' ? '…' : 'Test'}</button>
+                  </div>
+                  {endpointTest.state !== 'idle' &&
+                    <div className={`settings-hint settings-test-result settings-test-${endpointTest.state}`}>{endpointTest.message}</div>}
+                  {servedByProxy &&
+                    <div className="settings-hint settings-status">
+                      {normalizeBaseUrl(protoArrayEndpointEdit) === ''
+                        ? `Using this server's beacon proxy (${window.location.origin}/eth/*). Enter a URL to talk to another node directly.`
+                        : `This server proxies a beacon node: leave the URL empty to use it.`}
+                    </div>}
+                  <div className="settings-hint">Base URL of a standard Beacon API. Fork choice is read from /eth/v2/debug/fork_choice, falling back to v1.{!servedByProxy && ' Leave empty when served through the bundled proxy.'}</div>
                 </div>
               </div>
               <div className="settings-row">
@@ -1452,19 +1518,43 @@ function App() {
               <div className="settings-row">
                 <label className="settings-label" htmlFor="s-genesis">Genesis time</label>
                 <div className="settings-control settings-inline">
-                  <input id="s-genesis" className="settings-input settings-input-num settings-input-epoch" disabled={networkTypeEdit !== NetworkType.custom} type="number" value={genesisTimeEdit} onChange={handleSetGenesisTime} />
+                  {networkTypeEdit === NetworkType.custom
+                    ? <input id="s-genesis" className="settings-input settings-input-num settings-input-epoch" type="number" value={genesisTimeEdit} onChange={handleSetGenesisTime} />
+                    : <span id="s-genesis" className="settings-value">{genesisTimeEdit}</span>}
                   <span className="settings-unit">{moment(genesisTimeEdit * 1000).local().format('YYYY-MM-DD HH:mm:ss Z')}</span>
                 </div>
               </div>
               <div className="settings-row">
-                <label className="settings-label" htmlFor="s-spslot">Slot</label>
+                <label className="settings-label" htmlFor="s-spslot">Timing</label>
                 <div className="settings-control settings-inline">
-                  <input id="s-spslot" className="settings-input settings-input-num settings-input-small" disabled={networkTypeEdit !== NetworkType.custom} type="number" min="1" value={networkTypeEdit === NetworkType.custom ? secondsPerSlotEdit : secondsPerSlot} onChange={handleSetSecondsPerSlot} />
-                  <span className="settings-unit">s per slot</span>
-                  <input id="s-spepoch" className="settings-input settings-input-num settings-input-small" disabled={networkTypeEdit !== NetworkType.custom} type="number" min="1" value={networkTypeEdit === NetworkType.custom ? slotsPerEpochEdit : slotsPerEpoch} onChange={handleSetSlotsPerEpoch} />
-                  <span className="settings-unit">per epoch</span>
-                  <span className="settings-label settings-label-inline">PTC size</span>
-                  <input id="s-ptc" className="settings-input settings-input-num settings-input-small" disabled={networkTypeEdit !== NetworkType.custom} type="number" min="1" value={networkTypeEdit === NetworkType.custom ? ptcSizeEdit : ptcSize} onChange={handleSetPtcSize} />
+                  {networkTypeEdit === NetworkType.custom
+                    ? <input id="s-spslot" className="settings-input settings-input-num settings-input-small" type="number" min="1" value={secondsPerSlotEdit} onChange={handleSetSecondsPerSlot} />
+                    : <span id="s-spslot" className="settings-value">{secondsPerSlotEdit}</span>}
+                  <span className="settings-unit">seconds per slot</span>
+                  <span className="settings-sep">·</span>
+                  {networkTypeEdit === NetworkType.custom
+                    ? <input id="s-spepoch" className="settings-input settings-input-num settings-input-small" type="number" min="1" value={slotsPerEpochEdit} onChange={handleSetSlotsPerEpoch} />
+                    : <span className="settings-value">{slotsPerEpochEdit}</span>}
+                  <span className="settings-unit">slots per epoch</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <label className="settings-label" htmlFor="s-ptc">PTC size</label>
+                <div className="settings-control settings-inline">
+                  {networkTypeEdit === NetworkType.custom
+                    ? <input id="s-ptc" className="settings-input settings-input-num settings-input-small" type="number" min="1" value={ptcSizeEdit} onChange={handleSetPtcSize} />
+                    : <span id="s-ptc" className="settings-value">{ptcSizeEdit}</span>}
+                  <span className="settings-unit">members in the Payload Timeliness Committee (Gloas)</span>
+                </div>
+              </div>
+              <div className="settings-row">
+                <span className="settings-label"></span>
+                <div className="settings-control">
+                  <div className="settings-hint">
+                    {networkTypeEdit === NetworkType.auto && 'Values read from the node; use Test above to refresh them.'}
+                    {networkTypeEdit === NetworkType.custom && 'Editable: set them to match your network.'}
+                    {networkTypeEdit !== NetworkType.auto && networkTypeEdit !== NetworkType.custom && 'Fixed by the selected network.'}
+                  </div>
                 </div>
               </div>
             </section>

@@ -692,3 +692,49 @@ select.settings-input option {
 .tb-conn.idle {
   color: #999;
 }
+
+/* node URL test */
+.settings-url {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.settings-url .settings-input {
+  flex: 1;
+}
+
+.settings-test {
+  appearance: none;
+  background: #2a2a2a;
+  color: #e8e8e8;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font: inherit;
+  line-height: 1.4;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.settings-test:hover:not(:disabled) {
+  background: #3a3a3a;
+}
+
+.settings-test:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.settings-test-result.settings-test-ok {
+  color: #9ad27a;
+}
+
+.settings-test-result.settings-test-fail {
+  color: #ff9c9c;
+}
+
+.settings-sep {
+  color: #666;
+  margin: 0 2px;
+}

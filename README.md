@@ -28,8 +28,11 @@ the unit tests live next to `src/beaconApi.ts` and `src/forkChoiceApi.ts`.
 
 Settings → "Beacon node URL" takes the base URL of any node exposing the standard
 [Beacon API](https://github.com/ethereum/beacon-APIs), e.g. `http://localhost:5051`.
-Press **Poll** in the toolbar to start fetching; the chip at the top right shows whether the
-node answers and which fork choice API version is in use (hover it for endpoint details).
+The **Test** button next to the URL (also triggered by Enter or leaving the field) fetches
+genesis and spec from that URL without applying it, so a wrong URL or a CORS problem shows up
+before you close the dialog. Press **Poll** in the toolbar to start fetching; the chip at the
+top right shows whether the node answers and which fork choice API version is in use (hover it
+for endpoint details).
 
 Fork choice is read from `/eth/v2/debug/fork_choice` when the node supports it
 ([beacon-APIs#615](https://github.com/ethereum/beacon-APIs/pull/615)), falling back to
@@ -43,9 +46,16 @@ are applied or polling is started.
 ![Settings dialog](docs/settings.png)
 
 The browser talks to the node directly, so the node must allow cross-origin requests
-(e.g. Teku: `--rest-api-cors-origins="http://localhost:3000"`). Alternatively run the
-`server/` app: it serves the production build and proxies `/eth/*` to the node given in
-`PROTO_ENDPOINT`; leave "Beacon node URL" empty to use it.
+(e.g. Teku: `--rest-api-cors-origins="http://localhost:3000"`). When a request fails the app
+probes the node once more without CORS to tell a CORS block ("answers but likely blocks
+cross-origin requests") from an unreachable node, and says so in the error strip together with
+the fix. Alternatively run the
+`server/` app: it serves the production build and proxies the four read-only endpoints the app
+uses (`/eth/v1/beacon/genesis`, `/eth/v1/config/spec`, `/eth/v1/debug/fork_choice`,
+`/eth/v2/debug/fork_choice`, GET only) to the node given in `PROTO_ENDPOINT`; everything else
+under `/eth/` answers 404, so the node's full API is not exposed. The app asks the server (`GET /config`) whether the proxy is active and then
+defaults "Beacon node URL" to its own origin, so it connects immediately; an empty URL always
+means same-origin.
 
 ```
 yarn build
@@ -100,11 +110,20 @@ The settings screenshot is `?sample=gloas&network=mainnet&settings=1` at 1100×9
 
 ## Docker
 
-The image runs the development server on port 3000 (note: `npm install` inside the image does
-not use `yarn.lock`).
+The image builds the frontend from `yarn.lock` and runs the bundled Express server, which serves
+the production build on `PORT` (default 3000). With `PROTO_ENDPOINT` set it also proxies
+the four endpoints the app uses to that node and the app connects through it automatically; without it, enter a node
+URL in Settings (the node must then allow cross-origin requests from the app's origin).
 
 ```
 docker build -t proto-vis .
 
+# direct mode: node URL entered in the UI
 docker run -p 3000:3000 proto-vis
+
+# proxy mode: the container talks to the node, the browser talks to the container
+docker run -p 3000:3000 -e PROTO_ENDPOINT=http://host.docker.internal:5051 proto-vis
 ```
+
+The server also supports HTTP basic auth (`BASIC_USER`, `BASIC_PASS`) and HTTPS (`SECURE_PORT`,
+`HTTPS_KEY`, `HTTPS_CERT`, `HTTPS_KEY_PASS`); see `server/server.js`.

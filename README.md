@@ -108,6 +108,69 @@ with headless Chrome:
 
 The settings screenshot is `?sample=gloas&network=mainnet&settings=1` at 1100×900.
 
+## Deployment
+
+ProtoVis is a static single-page app; the only server-side piece is the optional Express server
+in `server/`. Two topologies cover every case.
+
+### 1. Direct: browser talks to the node
+
+The app is served by anything that can host static files (the dev server, `build/` on a web
+server, or the Docker image without `PROTO_ENDPOINT`). The browser fetches the Beacon API from
+the node itself, so the node must allow the app's origin (CORS).
+
+```mermaid
+flowchart LR
+    B["Browser<br/>ProtoVis"]
+    S["Static host<br/>dev server / build/ / Docker"]
+    N["Beacon node<br/>REST API, CORS enabled"]
+    B -- "GET index.html, bundle" --> S
+    B -- "GET /eth/v1/beacon/genesis<br/>GET /eth/v1/config/spec<br/>GET /eth/v{1,2}/debug/fork_choice" --> N
+```
+
+Use it when the node is yours and reachable from the browser's machine, e.g. `--rest-api-cors-origins="http://localhost:3000"` on Teku.
+The app's error strip tells a CORS block apart from an unreachable node.
+
+### 2. Proxied: the server talks to the node
+
+`server/server.js` (or the Docker image with `PROTO_ENDPOINT`) serves the build and forwards only
+the four endpoints the app uses to the node. The browser never reaches the node, so no CORS is
+needed and the node's other APIs stay private. The app detects this setup via `GET /config` and
+connects through its own origin automatically.
+
+```mermaid
+flowchart LR
+    B["Browser<br/>ProtoVis"]
+    P["ProtoVis server<br/>serves build/<br/>GET /config<br/>proxies 4 endpoints"]
+    N["Beacon node<br/>REST API, no CORS needed"]
+    B -- "GET /, /config<br/>GET /eth/... (same origin)" --> P
+    P -- "GET /eth/v1/beacon/genesis<br/>GET /eth/v1/config/spec<br/>GET /eth/v{1,2}/debug/fork_choice" --> N
+    B -. "blocked: everything else under /eth/*" .-x P
+```
+
+Use it when the node must not be exposed, when you cannot change its CORS settings, or when the
+app is shared: the server can add HTTPS (`SECURE_PORT`, `HTTPS_KEY`, `HTTPS_CERT`) and basic auth
+(`BASIC_USER`, `BASIC_PASS`) in front of everything.
+
+```mermaid
+flowchart LR
+    U["Users<br/>browser"]
+    P["ProtoVis server<br/>HTTPS + basic auth<br/>proxy"]
+    N["Beacon node<br/>private network"]
+    U -- "https, credentials" --> P
+    P -- "http, 4 endpoints" --> N
+```
+
+### Choosing
+
+| | Direct | Proxied |
+|---|---|---|
+| Node CORS configuration | required | not needed |
+| Node exposed to browsers | yes, full API | no, 4 read-only endpoints |
+| Node URL in Settings | entered by the user | same origin, automatic |
+| Extra process | none | `server/server.js` |
+| Docker | `docker run -p 3000:3000 proto-vis` | add `-e PROTO_ENDPOINT=http://node:5051` |
+
 ## Docker
 
 The image builds the frontend from `yarn.lock` and runs the bundled Express server, which serves

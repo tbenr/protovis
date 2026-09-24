@@ -1,83 +1,143 @@
-# ProtoArray visualization tool
+# ProtoVis
 
-Visualizes a beacon node's fork choice (proto-array) as a slot-by-slot graph.
-
-**Supports the standard fork choice debug API (v1, and v2 for Gloas / EIP-7732) plus the old
-Teku, Prysm and Nimbus proprietary dump formats.**
+Visualizes a beacon node's fork choice (proto-array) as a slot-by-slot graph, live from the node
+or from a saved dump.
 
 ![ProtoVis showing the synthetic Gloas sample](docs/screenshot.png)
 
-**Try it:** https://tbenr.github.io/protovis/?sample=gloas&network=mainnet loads the synthetic
-Gloas sample; without the parameters it connects to a node you enter in Settings (the node must
-allow the `https://tbenr.github.io` origin, see [Deployment](#deployment)).
+## Features
+
+- **Standard Beacon API**: reads `/eth/v2/debug/fork_choice` (Gloas / EIP-7732) with automatic
+  fallback to v1; legacy Teku, Prysm and Nimbus dump formats are still accepted.
+- **Zero configuration**: point it at a node's base URL and the genesis time, slot duration,
+  slots per epoch and PTC size are read from the node (Network **Auto**).
+- **Live follow**: the view scrolls with wall-clock time and a "now" line marks the current
+  instant, so new blocks appear as they arrive; the head trails the line instead of the view
+  jumping on every block.
+- **Gloas view**: PENDING / EMPTY / FULL nodes per slot, PTC vote rings on payload nodes with a
+  legend, and noisy EMPTY nodes hidden below a configurable weight share.
+- **Heads and weights**: every head numbered by weight, node size by weight (several modes),
+  late block markers, missing-slot markers, epoch grid.
+- **History**: every poll is kept; scrub through snapshots on the footer timeline, export the
+  history, import a saved response or an exported history.
+- **Connection diagnostics**: a **Test** button for the node URL, and fetch failures explained
+  (CORS block, unreachable node, mixed content, local-network permission) with the fix.
+- **Two ways to deploy**: static files with the browser talking to the node, or the bundled
+  server proxying only the four endpoints the app uses (with optional HTTPS and basic auth).
+  Docker image for both.
+
+## Try it
+
+- **Public page**: https://tbenr.github.io/protovis/?sample=gloas&network=mainnet loads the
+  synthetic Gloas sample. Without the parameters it connects to the node you enter in Settings;
+  the node must allow the `https://tbenr.github.io` origin (see [Deployment](#deployment)).
+- **Locally**: `yarn install && yarn start`, then open http://localhost:3000 (see
+  [Getting started](#getting-started)).
+- **Docker**: `docker build -t proto-vis . && docker run -p 3000:3000 proto-vis`.
 
 Older demo video (pre-Gloas UI): https://user-images.githubusercontent.com/15999009/186433395-c1ba217b-6e3f-4936-bbed-38b1261cbfd6.mov
 
-## Running it
+## Contents
+
+- [Getting started](#getting-started)
+- [Connecting to a node](#connecting-to-a-node)
+- [Using the view](#using-the-view)
+  - [Follow mode](#follow-mode)
+  - [Gloas (ePBS) view](#gloas-epbs-view)
+  - [Settings](#settings)
+- [Sample data, import and export](#sample-data-import-and-export)
+- [URL parameters](#url-parameters)
+- [Deployment](#deployment)
+  - [Direct: browser talks to the node](#1-direct-browser-talks-to-the-node)
+  - [Proxied: the server talks to the node](#2-proxied-the-server-talks-to-the-node)
+  - [Choosing](#choosing)
+  - [Docker](#docker)
+- [Development](#development)
+
+## Getting started
 
 The app is a Create React App project managed with yarn (`yarn.lock` is tracked).
 
 ```
 yarn install
 yarn start              # dev server on http://localhost:3000
-yarn build              # production build in build/
-CI=true yarn test --watchAll=false src/beaconApi src/forkChoiceApi   # unit tests
-yarn gen:gloas-testdata # regenerate src/testDataGloas.json from scripts/genGloasTestData.js
 ```
 
-`src/App.test.js` is Create React App boilerplate and does not run (Jest cannot load vis-network);
-the unit tests live next to `src/beaconApi.ts` and `src/forkChoiceApi.ts`.
+Then open **Settings**, enter your node's base URL (e.g. `http://localhost:5051`), press **Test**
+to check it answers, close the dialog and press **Poll**. The node must allow the app's origin
+(Teku: `--rest-api-cors-origins="http://localhost:3000"`); if it cannot, run the app through the
+bundled proxy instead, see [Deployment](#deployment).
+
+To run the production build with the bundled server:
+
+```
+yarn build
+cd server && yarn install
+PORT=8080 PROTO_ENDPOINT=http://localhost:5051 node server.js   # PROTO_ENDPOINT is optional
+```
+
+Or use the Docker image, see [Docker](#docker). Release zips on the
+[releases page](https://github.com/tbenr/protovis/releases) contain the build and the server with
+its dependencies: unzip, then `cd server && node server.js`.
 
 ## Connecting to a node
 
 Settings → "Beacon node URL" takes the base URL of any node exposing the standard
-[Beacon API](https://github.com/ethereum/beacon-APIs), e.g. `http://localhost:5051`.
-The **Test** button next to the URL (also triggered by Enter or leaving the field) fetches
-genesis and spec from that URL without applying it, so a wrong URL or a CORS problem shows up
-before you close the dialog. Press **Poll** in the toolbar to start fetching; the chip at the
-top right shows whether the node answers and which fork choice API version is in use (hover it
-for endpoint details).
-
-With **follow** (Heads group, on by default) the view scrolls with wall-clock time: a dashed red
-"now" line marks the current instant and stays just right of centre while the graph slides left at
-slot speed, so new blocks appear as they arrive instead of the view jumping to each new head.
-Dragging the view, **Center** or stepping through heads switches follow off; zooming keeps it.
-When the data is not live (samples, imported dumps, a node more than an epoch behind) follow
-falls back to re-centering on the canonical head after each update. **latest** (Poll group)
-keeps the footer timeline on the newest snapshot.
-
-![Follow mode against a live node: the head trails the "now" line](docs/follow.png)
+[Beacon API](https://github.com/ethereum/beacon-APIs). The **Test** button next to the URL (also
+triggered by Enter or leaving the field) fetches genesis and spec from that URL without applying
+it, so a wrong URL or a CORS problem shows up before you close the dialog. Press **Poll** in the
+toolbar to start fetching; the chip at the top right shows whether the node answers and which
+fork choice API version is in use (hover it for endpoint details).
 
 Fork choice is read from `/eth/v2/debug/fork_choice` when the node supports it
 ([beacon-APIs#615](https://github.com/ethereum/beacon-APIs/pull/615)), falling back to
 `/eth/v1/debug/fork_choice` otherwise. Both the plain and the `data`-wrapped response shapes are
 accepted.
 
-With Network set to **Auto** (the default) the genesis time, slot duration, slots per epoch and PTC size are
-read from the node (`/eth/v1/beacon/genesis` and `/eth/v1/config/spec`) whenever the settings
-are applied or polling is started.
+With Network set to **Auto** (the default) the genesis time, slot duration, slots per epoch and
+PTC size are read from the node (`/eth/v1/beacon/genesis` and `/eth/v1/config/spec`) whenever
+the settings are applied or polling is started. Pick a fixed network, or **Custom** to edit the
+values, when there is no node to ask (samples, imported dumps).
 
-![Settings dialog](docs/settings.png)
+When a request fails the app probes the node once more without CORS to tell a CORS block
+("answers but likely blocks cross-origin requests") from an unreachable node, and says so in the
+error strip together with the fix. A page served over https reaching an `http://` node is
+reported as mixed content, except for localhost nodes, where Chrome instead asks once for
+permission to reach the local network. When the app is served by the bundled proxy it detects
+that (`GET /config`) and connects through its own origin automatically; an empty URL always means
+same-origin.
 
-The browser talks to the node directly, so the node must allow cross-origin requests
-(e.g. Teku: `--rest-api-cors-origins="http://localhost:3000"`). When a request fails the app
-probes the node once more without CORS to tell a CORS block ("answers but likely blocks
-cross-origin requests") from an unreachable node, and says so in the error strip together with
-the fix. Alternatively run the
-`server/` app: it serves the production build and proxies the four read-only endpoints the app
-uses (`/eth/v1/beacon/genesis`, `/eth/v1/config/spec`, `/eth/v1/debug/fork_choice`,
-`/eth/v2/debug/fork_choice`, GET only) to the node given in `PROTO_ENDPOINT`; everything else
-under `/eth/` answers 404, so the node's full API is not exposed. The app asks the server (`GET /config`) whether the proxy is active and then
-defaults "Beacon node URL" to its own origin, so it connects immediately; an empty URL always
-means same-origin.
+## Using the view
 
-```
-yarn build
-cd server && yarn install
-PORT=8080 PROTO_ENDPOINT=http://localhost:5051 node server.js
-```
+The toolbar groups, left to right:
 
-## Gloas (ePBS) view
+- **Settings / Import / Export / Samples**: configuration, dumps in and out ([Sample data,
+  import and export](#sample-data-import-and-export)).
+- **Poll / latest**: start or stop polling; **latest** keeps the footer timeline on the newest
+  snapshot as data arrives.
+- **Heads**: the number of heads, the selected head (position by weight and its slot) with
+  arrows to step through them, **Center** to center on the canonical head, and **follow** (see
+  below).
+- **Size**: what a node's size represents: its own weight, or weight cumulated from the root
+  towards the heads or from the heads towards the root.
+- **epoch** and the connection chip.
+
+The footer timeline scrubs through the polled snapshots. Click a node to copy its block root,
+double-click to copy its full JSON; hover for details. Late blocks get a marker showing how late,
+skipped slots inside a chain a diamond.
+
+### Follow mode
+
+With **follow** (Heads group, on by default) the view scrolls with wall-clock time: a dashed red
+"now" line marks the current instant and stays just right of centre while the graph slides left
+at slot speed, so new blocks appear as they arrive instead of the view jumping to each new head.
+Dragging the view, **Center** or stepping through heads switches follow off; zooming keeps it.
+When the data is not live (samples, imported dumps, a node more than an epoch behind) follow
+falls back to re-centering on the canonical head after each update.
+
+![Follow mode against a live node: the head trails the "now" line](docs/follow.png)
+
+### Gloas (ePBS) view
 
 With API v2, each Gloas block is shown as its PENDING block node on the left half of the slot
 column plus its payload nodes on the right half: EMPTY (hollow dashed `∅`) and FULL
@@ -94,7 +154,17 @@ Childless EMPTY nodes carrying less than a configurable share of their block's w
 1%) are hidden (Settings → Display → "Hide childless EMPTY payload nodes"); a block whose payload
 was never revealed always keeps its EMPTY node.
 
-## Sample data
+### Settings
+
+![Settings dialog](docs/settings.png)
+
+- **Connection**: beacon node URL with **Test**, refresh period, snapshots kept, source type
+  (Standard, or a legacy dump format for Import).
+- **Network**: Auto, a known network, or Custom with editable genesis time, slot duration, slots
+  per epoch and PTC size.
+- **Display**: missing-slot markers, EMPTY node hiding and its threshold, physics.
+
+## Sample data, import and export
 
 The toolbar's **Samples** menu loads bundled dumps and selects the matching source type:
 
@@ -104,15 +174,24 @@ The toolbar's **Samples** menu loads bundled dumps and selects the matching sour
   skipped slot and mixed PTC votes. Edit the scenario in `scripts/genGloasTestData.js` and run
   `yarn gen:gloas-testdata` to regenerate it.
 
-**Export** saves the current history (all polled snapshots) as JSON. **Import** accepts either a
-single fork choice response in the selected source type's format or a previously exported history.
+**Export** saves the current history (all polled snapshots) as JSON. **Import** (Standard source
+type) accepts a fork choice response exactly as saved from a node, plain or wrapped in `data`, a
+bare array of its nodes, or a previously exported history. With a legacy source type selected it
+expects that client's old dump format.
 
-URL parameters are applied on start, useful for bookmarks and screenshots:
-`?sample=gloas` or `?sample=teku` loads a bundled dump, `?network=mainnet|goerli|sepolia|custom|auto`
-selects the network (a fixed network skips node detection), `?zoom=0.7` fixes the zoom used when the view first centers on the head or starts following,
-`?settings=1` opens the settings dialog.
-The screenshot above is `http://localhost:3000/?sample=gloas&network=mainnet&zoom=0.7` captured
-with headless Chrome:
+## URL parameters
+
+Applied on start, useful for bookmarks and screenshots:
+
+| Parameter | Effect |
+|---|---|
+| `?sample=gloas` / `?sample=teku` | load a bundled dump |
+| `?network=mainnet\|goerli\|sepolia\|custom\|auto` | select the network (a fixed network skips node detection) |
+| `?zoom=0.7` | zoom used when the view first centers on the head or starts following |
+| `?settings=1` | open the settings dialog |
+
+The screenshot at the top is `http://localhost:3000/?sample=gloas&network=mainnet&zoom=0.7`
+captured with headless Chrome:
 
 ```
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --hide-scrollbars \
@@ -120,9 +199,9 @@ with headless Chrome:
   "http://localhost:3000/?sample=gloas&network=mainnet&zoom=0.7"
 ```
 
-The settings screenshot is `?sample=gloas&network=mainnet&settings=1` at 1100×900. The follow-mode
-screenshot cannot use a sample (it needs live data): it is `?zoom=0.8` at 1600×700 against a live
-node through the proxy, captured a few seconds after pressing **Poll**.
+The settings screenshot is `?sample=gloas&network=mainnet&settings=1` at 1100×900. The
+follow-mode screenshot cannot use a sample (it needs live data): it is `?zoom=0.8` at 1600×700
+against a live node through the proxy, captured a few seconds after pressing **Poll**.
 
 ## Deployment
 
@@ -132,34 +211,37 @@ in `server/`. Two topologies cover every case.
 ### 1. Direct: browser talks to the node
 
 The app is served by anything that can host static files (the dev server, `build/` on a web
-server, or the Docker image without `PROTO_ENDPOINT`). The browser fetches the Beacon API from
-the node itself, so the node must allow the app's origin (CORS).
+server, GitHub Pages, or the Docker image without `PROTO_ENDPOINT`). The browser fetches the
+Beacon API from the node itself, so the node must allow the app's origin (CORS).
 
 ```mermaid
 flowchart LR
     B["Browser<br/>ProtoVis"]
-    S["Static host<br/>dev server / build/ / Docker"]
+    S["Static host<br/>dev server / build/ / Pages / Docker"]
     N["Beacon node<br/>REST API, CORS enabled"]
     B -- "GET index.html, bundle" --> S
     B -- "GET /eth/v1/beacon/genesis<br/>GET /eth/v1/config/spec<br/>GET /eth/v{1,2}/debug/fork_choice" --> N
 ```
 
-Use it when the node is yours and reachable from the browser's machine, e.g. `--rest-api-cors-origins="http://localhost:3000"` on Teku.
-The app's error strip tells a CORS block apart from an unreachable node.
+Use it when the node is yours and reachable from the browser's machine, e.g.
+`--rest-api-cors-origins="http://localhost:3000"` on Teku. The app's error strip tells a CORS
+block apart from an unreachable node.
 
 The public page at https://tbenr.github.io/protovis/ is this topology with GitHub Pages as the
-static host: `.github/workflows/pages.yml` builds every version tag with `PUBLIC_URL=/protovis` and
-deploys it. Allow the `https://tbenr.github.io` origin on the node; because the page is served over
-https, the node must be on localhost (browsers exempt it from mixed-content blocking) or reachable
-over https itself. For a localhost node Chrome also asks once for permission to reach the local
-network; the error strip says so if the request was refused.
+static host: `.github/workflows/pages.yml` builds every version tag with `PUBLIC_URL=/protovis`
+and deploys it. Allow the `https://tbenr.github.io` origin on the node; because the page is
+served over https, the node must be on localhost (browsers exempt it from mixed-content
+blocking) or reachable over https itself. For a localhost node Chrome also asks once for
+permission to reach the local network; the error strip says so if the request was refused.
 
 ### 2. Proxied: the server talks to the node
 
 `server/server.js` (or the Docker image with `PROTO_ENDPOINT`) serves the build and forwards only
-the four endpoints the app uses to the node. The browser never reaches the node, so no CORS is
-needed and the node's other APIs stay private. The app detects this setup via `GET /config` and
-connects through its own origin automatically.
+the four endpoints the app uses (`/eth/v1/beacon/genesis`, `/eth/v1/config/spec`,
+`/eth/v1/debug/fork_choice`, `/eth/v2/debug/fork_choice`, GET only) to the node; everything else
+under `/eth/` answers 404. The browser never reaches the node, so no CORS is needed and the
+node's other APIs stay private. The app detects this setup via `GET /config` and connects
+through its own origin automatically. An unreachable node yields a 502 to the browser.
 
 ```mermaid
 flowchart LR
@@ -172,8 +254,9 @@ flowchart LR
 ```
 
 Use it when the node must not be exposed, when you cannot change its CORS settings, or when the
-app is shared: the server can add HTTPS (`SECURE_PORT`, `HTTPS_KEY`, `HTTPS_CERT`) and basic auth
-(`BASIC_USER`, `BASIC_PASS`) in front of everything.
+app is shared: the server can add HTTPS (`SECURE_PORT`, `HTTPS_KEY`, `HTTPS_CERT`,
+`HTTPS_KEY_PASS`) and basic auth (`BASIC_USER`, `BASIC_PASS`) in front of everything; see
+`server/server.js`.
 
 ```mermaid
 flowchart LR
@@ -195,11 +278,11 @@ flowchart LR
 | Docker | `docker run -p 3000:3000 proto-vis` | add `-e PROTO_ENDPOINT=http://node:5051` |
 | Public page | https://tbenr.github.io/protovis/ (localhost or https nodes) | not available |
 
-## Docker
+### Docker
 
 The image builds the frontend from `yarn.lock` and runs the bundled Express server, which serves
-the production build on `PORT` (default 3000). With `PROTO_ENDPOINT` set it also proxies
-the four endpoints the app uses to that node and the app connects through it automatically; without it, enter a node
+the production build on `PORT` (default 3000). With `PROTO_ENDPOINT` set it also proxies the four
+endpoints to that node and the app connects through it automatically; without it, enter a node
 URL in Settings (the node must then allow cross-origin requests from the app's origin).
 
 ```
@@ -212,5 +295,20 @@ docker run -p 3000:3000 proto-vis
 docker run -p 3000:3000 -e PROTO_ENDPOINT=http://host.docker.internal:5051 proto-vis
 ```
 
-The server also supports HTTP basic auth (`BASIC_USER`, `BASIC_PASS`) and HTTPS (`SECURE_PORT`,
-`HTTPS_KEY`, `HTTPS_CERT`, `HTTPS_KEY_PASS`); see `server/server.js`.
+Images are not published; build from the repository.
+
+## Development
+
+```
+yarn start              # dev server on http://localhost:3000
+yarn build              # production build in build/
+CI=true yarn test --watchAll=false src/beaconApi src/forkChoiceApi src/timeAxis   # unit tests
+yarn gen:gloas-testdata # regenerate src/testDataGloas.json from scripts/genGloasTestData.js
+```
+
+`src/App.test.js` is Create React App boilerplate and does not run (Jest cannot load vis-network);
+the unit tests live next to `src/beaconApi.ts`, `src/forkChoiceApi.ts` and `src/timeAxis.ts`.
+
+Releases: bump `version` in `package.json` and `server/package.json`, tag the commit with the
+bare version (`0.2.1`), push the tag (this deploys the public page), then create the GitHub
+release `v0.2.1` with a zip of `build/` and `server/` (with production dependencies installed).

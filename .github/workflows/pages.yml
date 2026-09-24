@@ -1,0 +1,51 @@
+# Publishes the production build to GitHub Pages (https://tbenr.github.io/protovis/) on every
+# version tag, so the public page tracks releases. It is the "direct" topology from the README:
+# the browser talks to the node itself, so the node must allow the github.io origin (CORS) and,
+# unless it runs on localhost, be reachable over https.
+#
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+# "Run workflow" (workflow_dispatch) deploys whatever ref is selected, e.g. main after enabling Pages.
+name: pages
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: yarn
+      - run: yarn install --frozen-lockfile
+      # the site lives under /protovis/, unlike the zip and Docker builds which serve from /
+      - run: yarn build
+        env:
+          PUBLIC_URL: /protovis
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

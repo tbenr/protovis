@@ -7,6 +7,10 @@ Teku, Prysm and Nimbus proprietary dump formats.**
 
 ![ProtoVis showing the synthetic Gloas sample](docs/screenshot.png)
 
+**Try it:** https://tbenr.github.io/protovis/?sample=gloas loads the synthetic Gloas sample; without
+the parameter it connects to a node you enter in Settings (the node must allow the
+`https://tbenr.github.io` origin, see [Deployment](#deployment)).
+
 Older demo video (pre-Gloas UI): https://user-images.githubusercontent.com/15999009/186433395-c1ba217b-6e3f-4936-bbed-38b1261cbfd6.mov
 
 ## Running it
@@ -143,6 +147,12 @@ flowchart LR
 Use it when the node is yours and reachable from the browser's machine, e.g. `--rest-api-cors-origins="http://localhost:3000"` on Teku.
 The app's error strip tells a CORS block apart from an unreachable node.
 
+The public page at https://tbenr.github.io/protovis/ is this topology with GitHub Pages as the
+static host: `.github/workflows/pages.yml` builds every version tag with `PUBLIC_URL=/protovis` and
+deploys it. Allow the `https://tbenr.github.io` origin on the node; because the page is served over
+https, the node must be on localhost (browsers exempt it from mixed-content blocking) or reachable
+over https itself.
+
 ### 2. Proxied: the server talks to the node
 
 `server/server.js` (or the Docker image with `PROTO_ENDPOINT`) serves the build and forwards only
@@ -182,6 +192,7 @@ flowchart LR
 | Node URL in Settings | entered by the user | same origin, automatic |
 | Extra process | none | `server/server.js` |
 | Docker | `docker run -p 3000:3000 proto-vis` | add `-e PROTO_ENDPOINT=http://node:5051` |
+| Public page | https://tbenr.github.io/protovis/ (localhost or https nodes) | not available |
 
 ## Docker
 

@@ -60,8 +60,9 @@ export async function fetchNodeParams(base: string, fetchFn: FetchLike = fetch):
 // Why did a fetch fail? Browsers report CORS blocks, refused connections and DNS failures all as
 // a bare "Failed to fetch". A no-cors probe tells them apart: it resolves (opaque response) when
 // the server answered at all, and rejects only when nothing is listening. Mixed content is
-// decided from the URLs alone.
-export type FetchFailureKind = 'cors' | 'unreachable' | 'mixed-content' | 'proxy' | 'other'
+// decided from the URLs alone; loopback hosts are exempt from it, but a public page reaching one
+// needs the browser's local-network permission (Chrome prompts for it), which fails the probe too.
+export type FetchFailureKind = 'cors' | 'unreachable' | 'mixed-content' | 'local-network' | 'proxy' | 'other'
 
 export type FetchFailure = {
   kind: FetchFailureKind
@@ -69,6 +70,16 @@ export type FetchFailure = {
 }
 
 type ProbeFetch = (url: string, init?: RequestInit) => Promise<unknown>
+
+// localhost, *.localhost, 127.0.0.0/8 and [::1]: "potentially trustworthy" origins for browsers
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname
+    return host === 'localhost' || host.endsWith('.localhost') || host.startsWith('127.') || host === '[::1]'
+  } catch (e) {
+    return false
+  }
+}
 
 export async function diagnoseFetchFailure(
   base: string,
@@ -87,7 +98,8 @@ export async function diagnoseFetchFailure(
       message: `${message}: the app is using its own origin (${pageOrigin}) as node URL, so the bundled proxy must serve it with PROTO_ENDPOINT set`,
     }
   }
-  if (pageOrigin.startsWith('https:') && /^http:/i.test(endpoint)) {
+  const loopbackNode = isLoopbackUrl(endpoint)
+  if (pageOrigin.startsWith('https:') && /^http:/i.test(endpoint) && !loopbackNode) {
     return {
       kind: 'mixed-content',
       message: `${message}: this page is served over https but the node URL is http, which browsers block as mixed content; use an https node URL or the bundled proxy`,
@@ -96,6 +108,12 @@ export async function diagnoseFetchFailure(
   try {
     await fetchFn(genesisUrl(endpoint), { mode: 'no-cors', cache: 'no-store' })
   } catch (e) {
+    if (loopbackNode && !isLoopbackUrl(pageOrigin)) {
+      return {
+        kind: 'local-network',
+        message: `${message}: ${endpoint} is on this machine while the page comes from ${pageOrigin}. Chrome asks for permission to reach the local network (allow it in the prompt or in the site's settings), the node must allow this origin (Teku: --rest-api-cors-origins="${pageOrigin}"), and it must be running`,
+      }
+    }
     return { kind: 'unreachable', message: `${message}: cannot reach ${endpoint} (connection refused, host unknown or node down)` }
   }
   return {

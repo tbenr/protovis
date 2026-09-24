@@ -93,6 +93,29 @@ describe('diagnoseFetchFailure', () => {
     expect(probe).not.toHaveBeenCalled()
   })
 
+  it('does not call a loopback node mixed content: browsers exempt it', async () => {
+    const probe = jest.fn(async () => ({ type: 'opaque' })) as any
+    for (const node of ['http://localhost:5051', 'http://127.0.0.1:5051', 'http://[::1]:5051']) {
+      const result = await diagnoseFetchFailure(node, failed, 'https://protovis.example', probe)
+      expect(result.kind).toBe('cors')
+      expect(result.message).toMatch(/--rest-api-cors-origins="https:\/\/protovis.example"/)
+    }
+  })
+
+  it('explains the local-network permission when a public page cannot probe a loopback node', async () => {
+    const probe = jest.fn(async () => { throw new TypeError('Failed to fetch') }) as any
+    const result = await diagnoseFetchFailure('http://localhost:5051', failed, 'https://tbenr.github.io', probe)
+    expect(result.kind).toBe('local-network')
+    expect(result.message).toMatch(/local network/i)
+    expect(result.message).toMatch(/--rest-api-cors-origins="https:\/\/tbenr.github.io"/)
+  })
+
+  it('keeps unreachable for a loopback node when the page is local too', async () => {
+    const probe = jest.fn(async () => { throw new TypeError('Failed to fetch') }) as any
+    const result = await diagnoseFetchFailure('http://localhost:5051', failed, 'http://localhost:3000', probe)
+    expect(result.kind).toBe('unreachable')
+  })
+
   it('points at the proxy for an empty node URL', async () => {
     const result = await diagnoseFetchFailure('', failed, origin, jest.fn() as any)
     expect(result.kind).toBe('proxy')

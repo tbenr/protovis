@@ -7,9 +7,9 @@ Teku, Prysm and Nimbus proprietary dump formats.**
 
 ![ProtoVis showing the synthetic Gloas sample](docs/screenshot.png)
 
-**Try it:** https://tbenr.github.io/protovis/?sample=gloas loads the synthetic Gloas sample; without
-the parameter it connects to a node you enter in Settings (the node must allow the
-`https://tbenr.github.io` origin, see [Deployment](#deployment)).
+**Try it:** https://tbenr.github.io/protovis/?sample=gloas&network=mainnet loads the synthetic
+Gloas sample; without the parameters it connects to a node you enter in Settings (the node must
+allow the `https://tbenr.github.io` origin, see [Deployment](#deployment)).
 
 Older demo video (pre-Gloas UI): https://user-images.githubusercontent.com/15999009/186433395-c1ba217b-6e3f-4936-bbed-38b1261cbfd6.mov
 
@@ -151,7 +151,8 @@ The public page at https://tbenr.github.io/protovis/ is this topology with GitHu
 static host: `.github/workflows/pages.yml` builds every version tag with `PUBLIC_URL=/protovis` and
 deploys it. Allow the `https://tbenr.github.io` origin on the node; because the page is served over
 https, the node must be on localhost (browsers exempt it from mixed-content blocking) or reachable
-over https itself.
+over https itself. For a localhost node Chrome also asks once for permission to reach the local
+network; the error strip says so if the request was refused.
 
 ### 2. Proxied: the server talks to the node
 

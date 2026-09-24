@@ -19,6 +19,7 @@ import { fetchNodeParams, normalizeBaseUrl, diagnoseFetchFailure } from './beaco
 import { fetchForkChoice, forkChoiceNodeKey, resolveParentKey, isV2Node, ptcVoteFractions, ForkChoiceApiVersion, PayloadStatus } from './forkChoiceApi'
 import { makePtcNodeRenderer, makeEmptyNodeRenderer } from './ptcNode'
 import PtcLegend from './PtcLegend'
+import { currentSlot, slotToX, isTimeTrackable, SlotAxis } from './timeAxis'
 import ErrorPanel, { ActiveErrors } from './ErrorPanel'
 
 const SLOT_WIDTH: number = 150
@@ -139,6 +140,9 @@ const DEFAULT_DRAW_MISSING_SLOT_NODES: boolean = true
 const DEFAULT_HIDE_EMPTY_NODES: boolean = true
 // childless EMPTY nodes below this share (%) of their block's weight are hidden
 const DEFAULT_HIDE_EMPTY_THRESHOLD: number = 1
+// follow mode: where the "now" line is kept, as a fraction of the canvas width from the left
+const FOLLOW_NOW_POSITION: number = 0.75
+const NOW_LINE_COLOR: string = '#e0473a'
 const DEFAULT_PTC_SIZE: number = 512 // mainnet Payload Timeliness Committee size
 const DEFAULT_PHYSICS: boolean = true
 
@@ -607,7 +611,13 @@ function App() {
   const [poll, setPoll] = useState<boolean>(pollActiveAtStartup)
   const [pollTimer, setPollTimer] = useState<any>(0)
   const [followPoll, setFollowPoll] = React.useState(true)
-  const [followCanonicalHead, setFollowCanonicalHead] = React.useState(true)
+  // follow wall-clock time: the view slides so that "now" stays near the right edge
+  const [followTime, setFollowTime] = React.useState(true)
+  // set when following is switched on, so the first move animates and takes the head's y
+  const followSnap = useRef<boolean>(true)
+  // what the per-frame follow correction needs; a ref so the vis event handlers stay stable
+  const followRef = useRef<{ active: boolean; animatingUntil: number; axis: () => SlotAxis | undefined; genesisTime: number; secondsPerSlot: number }>(
+    { active: false, animatingUntil: 0, axis: () => undefined, genesisTime: 0, secondsPerSlot: 1 })
 
   const [nodeSizeMode, setNodeSizeMode] = useState<NodeSizeMode>(DEFAULT_NODE_SIZE_MODE)
 
@@ -820,12 +830,80 @@ function App() {
   }, [getProtoArray, pollTick])
 
 
+  // horizontal slot axis of the current layout: slot columns sit at a fixed pitch right of the leftmost root
+  const slotAxis = useCallback((): SlotAxis | undefined => {
+    if (!network || !roots) return undefined
+    let leftMost: any
+    Object.keys(roots).forEach(rootId => {
+      const node = roots[rootId]
+      if (!leftMost || node.slot < leftMost.slot) leftMost = node
+    })
+    if (!leftMost) return undefined
+    try {
+      const position = network.getPosition(leftMost.id)
+      if (!position || isNaN(position.x)) return undefined
+      return { leftMostSlot: leftMost.slot, leftMostX: position.x, blockOffset: payloadColumns ? slotWidth / 4 : 0, slotWidth }
+    } catch (e) {
+      return undefined // node not in the network yet
+    }
+  }, [network, roots, payloadColumns, slotWidth])
+
+  const newestHeadSlot: number | undefined = heads.length > 0 ? Math.max(...heads.map(head => head.slot)) : undefined
+  const timeTrackable = isTimeTrackable(currentSlot(genesisTime, secondsPerSlot, Date.now()), newestHeadSlot, slotsPerEpoch)
+
   useEffect(() => {
-    if (followCanonicalHead) {
+    if (followTime) followSnap.current = true
+  }, [followTime])
+
+  followRef.current = { ...followRef.current, active: followTime && timeTrackable, axis: slotAxis, genesisTime, secondsPerSlot }
+
+  // follow: keep "now" near the right edge, sliding the graph left at slot speed. The horizontal
+  // correction itself happens in vis's initRedraw handler (see events), so every frame vis draws,
+  // for whatever reason (layout, physics, zoom), is already aligned; this loop only asks for frames
+  // while "now" has moved by a visible amount. With data that is not live (samples, stale nodes)
+  // fall back to centering on the canonical head once per update.
+  useEffect(() => {
+    if (!network || heads.length === 0) return
+    if (!followTime) {
+      if (!timeTrackable) return
+      const timer = setInterval(() => network.redraw(), 1000) // keeps the "now" line moving
+      return () => clearInterval(timer)
+    }
+    if (!timeTrackable) {
       const timer = setTimeout(handleCanonicalHead, 200)
       return () => clearTimeout(timer)
     }
-  }, [followCanonicalHead, handleCanonicalHead])
+    if (followSnap.current) {
+      followSnap.current = false
+      const axis = slotAxis()
+      const canvasWidth: number = network?.canvas?.frame?.canvas?.clientWidth ?? 0
+      if (axis && canvasWidth > 0) {
+        const x = slotToX(axis, currentSlot(genesisTime, secondsPerSlot, Date.now()))
+        const y = network.getPosition(heads[0].id).y
+        const offset = { x: canvasWidth * FOLLOW_NOW_POSITION - canvasWidth / 2, y: 0 }
+        if (INITIAL_ZOOM !== undefined) {
+          network.moveTo({ position: { x, y }, offset, scale: INITIAL_ZOOM, animation: false })
+        } else {
+          followRef.current.animatingUntil = Date.now() + 350
+          network.moveTo({ position: { x, y }, offset, animation: { duration: 300, easingFunction: 'easeInOutQuad' } })
+        }
+      }
+    }
+    let frame = 0
+    let lastX = NaN
+    const loop = () => {
+      frame = requestAnimationFrame(loop)
+      if (Date.now() < followRef.current.animatingUntil) return
+      const axis = slotAxis()
+      if (!axis) return
+      const x = slotToX(axis, currentSlot(genesisTime, secondsPerSlot, Date.now()))
+      if (Math.abs(x - lastX) * network.getScale() < 0.2) return // sub-pixel: not worth a frame
+      lastX = x
+      network.redraw()
+    }
+    frame = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(frame)
+  }, [followTime, timeTrackable, network, heads, slotAxis, genesisTime, secondsPerSlot, handleCanonicalHead])
 
   const getNetwork = useCallback((a) => {
     setNetwort(a)
@@ -1027,6 +1105,7 @@ function App() {
 
     const previousHead = (headIdx + 1) % heads.length
 
+    setFollowTime(false)
     network.fit({
       nodes: [heads[previousHead].id],
       animation: true
@@ -1039,6 +1118,7 @@ function App() {
 
     const nextHead = (Math.max(0, headIdx - 1)) % heads.length
 
+    setFollowTime(false)
     network.fit({
       nodes: [heads[nextHead].id],
       animation: true
@@ -1271,6 +1351,20 @@ function App() {
 
         params.event = "[original event]"
       },
+      dragStart: function () {
+        setFollowTime(false)
+      },
+      // runs before vis draws a frame, before the view transform is applied: pin "now" to a fixed
+      // DOM x by setting the horizontal translation directly (dom = canvas * scale + translation)
+      initRedraw: function () {
+        const follow = followRef.current
+        if (!follow.active || !network || Date.now() < follow.animatingUntil) return
+        const axis = follow.axis()
+        const canvasWidth: number = network?.canvas?.frame?.canvas?.clientWidth ?? 0
+        if (!axis || canvasWidth === 0) return
+        const x = slotToX(axis, currentSlot(follow.genesisTime, follow.secondsPerSlot, Date.now()))
+        network.body.view.translation.x = canvasWidth * FOLLOW_NOW_POSITION - x * network.getScale()
+      },
       doubleClick: function (params) {
         if (params.nodes.length === 0) return
         let node: any = networkNodes.get(params.nodes[0])
@@ -1313,7 +1407,9 @@ function App() {
         })
 
         const minEpoch: number = Math.floor(minSlot / slotsPerEpoch)
-        const maxEpoch: number = Math.floor(maxSlot / slotsPerEpoch)
+        const nowSlot = currentSlot(genesisTime, secondsPerSlot, Date.now())
+        const showNow = isTimeTrackable(nowSlot, maxSlot, slotsPerEpoch)
+        const maxEpoch: number = Math.floor(Math.max(maxSlot, showNow ? nowSlot : maxSlot) / slotsPerEpoch)
         const leftMostNodeSlot: number = minSlot
         minSlot = minEpoch * slotsPerEpoch
         maxSlot = maxEpoch * slotsPerEpoch + slotsPerEpoch - 1
@@ -1360,6 +1456,24 @@ function App() {
           ctx.stroke()
           ctx.fillStyle = "#000000"
           ctx.fillText(slotLabel, slotCenter - ctx.measureText(slotLabel).width / 2, absoluteTop + 60)
+        }
+
+        // "now" line: where wall-clock time falls on the slot axis
+        if (showNow) {
+          const nowX = slotToX({ leftMostSlot: leftMostNodeSlot, leftMostX: leftMostPosition.x, blockOffset, slotWidth }, nowSlot)
+          ctx.save()
+          ctx.strokeStyle = NOW_LINE_COLOR
+          ctx.lineWidth = 2
+          ctx.setLineDash([8, 6])
+          ctx.beginPath()
+          ctx.moveTo(nowX, absoluteTop + 50)
+          ctx.lineTo(nowX, absoluteBottom)
+          ctx.stroke()
+          ctx.restore()
+          ctx.fillStyle = NOW_LINE_COLOR
+          ctx.font = "14px Georgia"
+          ctx.fillText(`now ${moment().format('HH:mm:ss')}`, nowX + 6, absoluteTop + 82)
+          ctx.font = "20px Georgia"
         }
 
         // terminal node
@@ -1609,7 +1723,7 @@ function App() {
                   <label className="switch tb-switch" title="jump to the latest snapshot as new data arrives">
                     <input type="checkbox" checked={followPoll} onChange={(event) => setFollowPoll(event.target.checked)} />
                     <span className="switch-track" />
-                    follow
+                    latest
                   </label>
                 </div>
               </div>
@@ -1621,11 +1735,11 @@ function App() {
                     {heads.length > 0 ? `${headIdx + 1} / ${heads.length} · slot ${heads[headIdx]?.slot ?? heads[0].slot}` : '0 / 0'}
                   </span>
                   <button className="tb-btn" onClick={handlePreviousHead} title="next head (lighter)">›</button>
-                  <button className="tb-btn" onClick={handleCanonicalHead} title="center the view on the canonical head">⌖ Center</button>
-                  <label className="switch tb-switch" title="re-center the view on the canonical head after each update">
-                    <input type="checkbox" checked={followCanonicalHead} onChange={(event) => setFollowCanonicalHead(event.target.checked)} />
+                  <button className="tb-btn" onClick={() => { setFollowTime(false); handleCanonicalHead() }} title="center the view on the canonical head (stops following)">⌖ Center</button>
+                  <label className="switch tb-switch" title="follow wall-clock time: the view slides so the current slot stays just right of centre; dragging the view stops it. Falls back to re-centering on the head when the data is not live">
+                    <input type="checkbox" checked={followTime} onChange={(event) => setFollowTime(event.target.checked)} />
                     <span className="switch-track" />
-                    auto
+                    follow
                   </label>
                 </div>
               </div>

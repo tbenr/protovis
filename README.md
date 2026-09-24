@@ -34,6 +34,16 @@ before you close the dialog. Press **Poll** in the toolbar to start fetching; th
 top right shows whether the node answers and which fork choice API version is in use (hover it
 for endpoint details).
 
+With **follow** (Heads group, on by default) the view scrolls with wall-clock time: a dashed red
+"now" line marks the current instant and stays just right of centre while the graph slides left at
+slot speed, so new blocks appear as they arrive instead of the view jumping to each new head.
+Dragging the view, **Center** or stepping through heads switches follow off; zooming keeps it.
+When the data is not live (samples, imported dumps, a node more than an epoch behind) follow
+falls back to re-centering on the canonical head after each update. **latest** (Poll group)
+keeps the footer timeline on the newest snapshot.
+
+![Follow mode against a live node: the head trails the "now" line](docs/follow.png)
+
 Fork choice is read from `/eth/v2/debug/fork_choice` when the node supports it
 ([beacon-APIs#615](https://github.com/ethereum/beacon-APIs/pull/615)), falling back to
 `/eth/v1/debug/fork_choice` otherwise. Both the plain and the `data`-wrapped response shapes are
@@ -95,7 +105,7 @@ single fork choice response in the selected source type's format or a previously
 
 URL parameters are applied on start, useful for bookmarks and screenshots:
 `?sample=gloas` or `?sample=teku` loads a bundled dump, `?network=mainnet|goerli|sepolia|custom|auto`
-selects the network (a fixed network skips node detection), `?zoom=0.7` fixes the zoom used whenever the view centers on the head,
+selects the network (a fixed network skips node detection), `?zoom=0.7` fixes the zoom used when the view first centers on the head or starts following,
 `?settings=1` opens the settings dialog.
 The screenshot above is `http://localhost:3000/?sample=gloas&network=mainnet&zoom=0.7` captured
 with headless Chrome:
@@ -106,7 +116,9 @@ with headless Chrome:
   "http://localhost:3000/?sample=gloas&network=mainnet&zoom=0.7"
 ```
 
-The settings screenshot is `?sample=gloas&network=mainnet&settings=1` at 1100×900.
+The settings screenshot is `?sample=gloas&network=mainnet&settings=1` at 1100×900. The follow-mode
+screenshot cannot use a sample (it needs live data): it is `?zoom=0.8` at 1600×700 against a live
+node through the proxy, captured a few seconds after pressing **Poll**.
 
 ## Deployment
 

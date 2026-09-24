@@ -16,7 +16,7 @@ import 'vis-network/styles/vis-network.min.css'
 import testData from './testData.json'
 import testDataGloas from './testDataGloas.json'
 import { fetchNodeParams, normalizeBaseUrl, diagnoseFetchFailure } from './beaconApi'
-import { fetchForkChoice, forkChoiceNodeKey, resolveParentKey, isV2Node, ptcVoteFractions, ForkChoiceApiVersion, PayloadStatus } from './forkChoiceApi'
+import { fetchForkChoice, forkChoiceNodeKey, resolveParentKey, isV2Node, ptcVoteFractions, parseStandardDump, FAR_FUTURE_SLOT, ForkChoiceApiVersion, PayloadStatus } from './forkChoiceApi'
 import { makePtcNodeRenderer, makeEmptyNodeRenderer } from './ptcNode'
 import PtcLegend from './PtcLegend'
 import { currentSlot, slotToX, isTimeTrackable, SlotAxis } from './timeAxis'
@@ -30,7 +30,6 @@ const LEVEL_ANCHOR_GRANULARITY: number = 2048
 const DEFAULT_SLOTS_PER_EPOCH: number = 32
 const DEFAULT_SECONDS_PER_SLOT: number = 12
 
-const FAR_FUTURE_SLOT = '18446744073709551615'
 
 const MAINNET_GENESIS_TIME: number = 1606824023
 const GOERLI_GENESIS_TIME: number = 1616508000
@@ -1196,38 +1195,12 @@ function App() {
     }
   }
 
-  const parseStandardData = (input: any) => {
-    const filter = (node: any) => { return node.slot !== FAR_FUTURE_SLOT }
+  // Standard source type: a single response (plain or data-wrapped, as saved from a node) or an exported history
+  const parseStandardData = (input: any): ForckchoiceDump[] => {
     try {
-      let data: any = typeof input === 'string' ? JSON.parse(input) : input
-      if (!Array.isArray(data)) {
-        // single protoarray
-        return [{
-          timestamp: moment(data.time),
-          justifiedCheckpoint: data.justified_checkpoint,
-          finalizedCheckpoint: data.finalized_checkpoint,
-          forkchoiceNodes: data.fork_choice_nodes.filter(filter),
-          extraData: data.extra_data
-        } as ForckchoiceDump]
-      } else {
-        // multiple protoarrays
-        for (let dump of data) {
-          dump.timestamp = moment(dump.time)
-          if (dump.protoArray) {
-            dump.forkchoiceNodes = dump.fork_choice_nodes.filter(filter)
-            dump.justifiedCheckpoint = dump.justified_checkpoint
-            dump.finalizedCheckpoint = dump.finalized_checkpoint
-            dump.extraData = dump.extra_data
-            delete dump.extra_data
-            delete dump.justified_checkpoint
-            delete dump.finalized_checkpoint
-            delete dump.protoArray
-          }
-        }
-        return data
-      }
+      return parseStandardDump(input).map(dump => ({ ...dump, timestamp: dump.time ? moment(dump.time) : moment() }))
     } catch (e) {
-      alert("**Not valid Nimbus JSON file!**\nerror: " + e)
+      alert("**Not a valid standard fork choice dump!**\nerror: " + e)
       return []
     }
   }

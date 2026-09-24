@@ -29,6 +29,46 @@ export function unwrapForkChoiceResponse(body: any): any {
   return data
 }
 
+// Nimbus reports its sentinel node at this slot; it is dropped from dumps.
+export const FAR_FUTURE_SLOT = '18446744073709551615'
+
+export type StandardDump = {
+  time?: string // ISO timestamp of the snapshot; absent for a bare response (taken as "now")
+  forkchoiceNodes: any[]
+  justifiedCheckpoint?: any
+  finalizedCheckpoint?: any
+  extraData?: any
+}
+
+// Parses what Import accepts for the Standard source type: one fork choice response (plain or
+// data-wrapped, exactly as saved from a node), a bare array of its nodes, or a history previously
+// produced by Export (camelCase keys, timestamps kept; snake_case entries are accepted too).
+export function parseStandardDump(input: string | object): StandardDump[] {
+  const data: any = typeof input === 'string' ? JSON.parse(input) : input
+  const notSentinel = (node: any) => node.slot !== FAR_FUTURE_SLOT
+  const isNode = (entry: any) => entry && typeof entry === 'object' && 'slot' in entry && 'block_root' in entry
+  if (!Array.isArray(data) || data.every(isNode)) {
+    const response = unwrapForkChoiceResponse(Array.isArray(data) ? { fork_choice_nodes: data } : data)
+    return [{
+      forkchoiceNodes: response.fork_choice_nodes.filter(notSentinel),
+      justifiedCheckpoint: response.justified_checkpoint,
+      finalizedCheckpoint: response.finalized_checkpoint,
+      extraData: response.extra_data,
+    }]
+  }
+  return data.map((entry: any, index: number) => {
+    const nodes = entry?.forkchoiceNodes ?? entry?.fork_choice_nodes
+    if (!Array.isArray(nodes)) throw new Error(`history entry ${index} has no fork choice nodes`)
+    return {
+      time: entry.timestamp ?? entry.time,
+      forkchoiceNodes: nodes.filter(notSentinel),
+      justifiedCheckpoint: entry.justifiedCheckpoint ?? entry.justified_checkpoint,
+      finalizedCheckpoint: entry.finalizedCheckpoint ?? entry.finalized_checkpoint,
+      extraData: entry.extraData ?? entry.extra_data,
+    }
+  })
+}
+
 async function getForkChoice(fetchFn: FetchLike, url: string) {
   const res = await fetchFn(url)
   return { res, url }

@@ -5,6 +5,8 @@ import {
   resolveParentKey,
   ForkChoiceApiVersion,
   ptcVoteFractions,
+  parseStandardDump,
+  FAR_FUTURE_SLOT,
 } from './forkChoiceApi'
 
 const ZERO_HASH = '0x' + '0'.repeat(64)
@@ -146,5 +148,51 @@ describe('ptcVoteFractions', () => {
   it('caps at the committee size and never lets yes exceed attesters', () => {
     const f = ptcVoteFractions({ payload_availability_yes_count: '20', payload_attester_count: '5', payload_data_availability_yes_count: '99' }, 16)
     expect(f).toEqual({ yes: 1, votedNotYes: 0, dataYes: 1 })
+  })
+})
+
+describe('parseStandardDump', () => {
+  const node = (slot: string) => ({ slot, block_root: '0x' + slot.padStart(64, '0'), parent_root: ZERO_HASH, weight: '1', validity: 'valid', execution_block_hash: ZERO_HASH })
+  const response = {
+    justified_checkpoint: { epoch: '2', root: '0xaa' },
+    finalized_checkpoint: { epoch: '1', root: '0xbb' },
+    fork_choice_nodes: [node('10'), node('11'), node(FAR_FUTURE_SLOT)],
+    extra_data: { note: 'x' },
+  }
+
+  it('parses a plain beacon-APIs response into one snapshot without a time', () => {
+    const [dump] = parseStandardDump(response)
+    expect(dump.time).toBeUndefined()
+    expect(dump.forkchoiceNodes.map((n: any) => n.slot)).toEqual(['10', '11'])
+    expect(dump.justifiedCheckpoint).toEqual(response.justified_checkpoint)
+    expect(dump.finalizedCheckpoint).toEqual(response.finalized_checkpoint)
+    expect(dump.extraData).toEqual({ note: 'x' })
+  })
+
+  it('unwraps a data-wrapped response as saved from Teku', () => {
+    const [dump] = parseStandardDump(JSON.stringify({ data: response }))
+    expect(dump.forkchoiceNodes).toHaveLength(2)
+  })
+
+  it('restores an exported history with its timestamps', () => {
+    const history = [
+      { timestamp: '2026-09-24T09:00:00.000Z', forkchoiceNodes: [node('10')], justifiedCheckpoint: { epoch: '1', root: '0xaa' } },
+      { timestamp: '2026-09-24T09:00:06.000Z', forkchoiceNodes: [node('10'), node('11')] },
+    ]
+    const dumps = parseStandardDump(JSON.stringify(history))
+    expect(dumps.map(d => d.time)).toEqual(['2026-09-24T09:00:00.000Z', '2026-09-24T09:00:06.000Z'])
+    expect(dumps[1].forkchoiceNodes).toHaveLength(2)
+    expect(dumps[0].justifiedCheckpoint).toEqual({ epoch: '1', root: '0xaa' })
+  })
+
+  it('accepts a bare array of nodes as one snapshot', () => {
+    const [dump] = parseStandardDump([node('10'), node('11'), node(FAR_FUTURE_SLOT)])
+    expect(dump.forkchoiceNodes.map((n: any) => n.slot)).toEqual(['10', '11'])
+    expect(dump.time).toBeUndefined()
+  })
+
+  it('rejects input without fork choice nodes', () => {
+    expect(() => parseStandardDump({ data: { hello: 1 } })).toThrow(/fork_choice_nodes/)
+    expect(() => parseStandardDump('[{"nope":1}]')).toThrow(/fork choice/i)
   })
 })

@@ -3,7 +3,9 @@
 # the browser talks to the node itself, so the node must allow the github.io origin (CORS) and,
 # unless it runs on localhost, be reachable over https.
 #
-# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions".
+# One-time setup: repository Settings -> Pages -> Source: "GitHub Actions", and in
+# Settings -> Environments -> github-pages allow deployments from tags matching *.*.* (the
+# environment allows only main by default, which fails the deploy job before its first step).
 # "Run workflow" (workflow_dispatch) deploys whatever ref is selected, e.g. main after enabling Pages.
 name: pages
 

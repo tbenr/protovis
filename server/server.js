@@ -67,7 +67,13 @@ if (PROTO_ENDPOINT) {
   const beaconBaseUrl = PROTO_ENDPOINT.replace(/\/+$/, '')
   for (const path of PROXIED_PATHS) {
     app.get(path, (req, res) => {
-      req.pipe(request({ url: beaconBaseUrl + path, headers: { accept: 'application/json' } })).pipe(res);
+      const upstream = request({ url: beaconBaseUrl + path, headers: { accept: 'application/json' } })
+      // an unreachable node must answer the browser, not crash the server (an unhandled 'error' event exits the process)
+      upstream.on('error', (err) => {
+        if (res.headersSent) return res.end()
+        res.status(502).json({ code: 502, message: `beacon node unreachable: ${err.code || err.message}` })
+      })
+      req.pipe(upstream).pipe(res);
     });
   }
   app.all("/eth/*", (req, res) => {
